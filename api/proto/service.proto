@@ -1,0 +1,29 @@
+syntax = "proto3";
+
+package domcluster;
+
+option go_package = "domcluster/api/proto";
+
+// ==================== 通用服务 ====================
+service DomclusterService {
+  // 通用发布-订阅接口
+  rpc Publish(stream PublishRequest) returns (stream PublishResponse);
+}
+
+// ==================== 消息定义 ====================
+
+// PublishRequest 发布请求
+message PublishRequest {
+  string issuer = 1;   // 发起者（节点ID或服务端）
+  string req_id = 2;   // 请求ID（用于匹配回复）
+  string cmd = 3;      // 命令类型（register, heartbeat, execute, report_metrics, etc.）
+  bytes data = 4;      // 数据（JSON编码）
+}
+
+// PublishResponse 发布回复
+message PublishResponse {
+  string reporter = 1; // 回复者
+  string req_id = 2;   // 请求ID
+  int32 status = 3;    // 状态码（0=成功, 非0=失败）
+  bytes data = 4;      // 数据（JSON编码）
+}
