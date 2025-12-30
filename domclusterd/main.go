@@ -1,58 +1,61 @@
 package main
 
 import (
-	"fmt"
+	"domclusterd/tasks"
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
+	"domclusterd/config"
 	"domclusterd/connections"
+	"domclusterd/log"
+
+	"go.uber.org/zap"
 )
 
 func main() {
+	cfg, err := config.Load()
+	if err != nil {
+		panic(err)
+	}
+	if err := log.Init(false); err != nil {
+		panic(err)
+	}
+
+	log.Info("Starting domclusterd",
+		zap.String("address", cfg.GetAddress()),
+		zap.String("role", cfg.GetRole()),
+		zap.Bool("tls", cfg.GetUseTLS()),
+	)
+
 	manager := connections.NewManager(&connections.Config{
-		Address:  "localhost:50051",
+		Address:  cfg.GetAddress(),
 		CertFile: "",
 		KeyFile:  "",
 		CAFile:   "",
-		Timeout:  10 * time.Second,
+		Timeout:  cfg.GetTimeout(),
 	})
 
-	err := manager.Connect()
-	if err != nil {
-		panic(err)
+	if err := manager.Connect(); err != nil {
+		log.Fatal("Failed to connect to server", zap.Error(err))
+	} else {
+		log.Info("Connected to server")
 	}
 
-	// 注册节点
-	err = manager.RegisterNode("node-001", "Worker Node 1", "judgehost")
-	if err != nil {
-		panic(err)
+	if err := manager.RegisterNode("node-001", "Worker Node 1", cfg.GetRole()); err != nil {
+		log.Fatal("Failed to register node", zap.Error(err))
 	}
 
-	fmt.Println("Node registered")
+	log.Info("Node registered successfully")
 
-	// 心跳循环
-	ticker := time.NewTicker(10 * time.Second)
-	defer ticker.Stop()
+	tm := tasks.TaskManager{}
 
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	defer tm.Stop()
 
-	go func() {
-		for {
-			select {
-			case <-ticker.C:
-				if err := manager.SendHeartbeat(); err != nil {
-					fmt.Printf("Heartbeat failed: %v\n", err)
-				}
-			case <-quit:
-				return
-			}
-		}
-	}()
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	<-sigChan
 
-	<-quit
-	fmt.Println("Shutting down...")
+	log.Info("Shutting down...")
 	manager.Close()
 }
