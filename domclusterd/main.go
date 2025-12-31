@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"domclusterd/tasks"
 	"os"
 	"os/signal"
@@ -24,7 +25,6 @@ func main() {
 
 	log.Info("Starting domclusterd",
 		zap.String("address", cfg.GetAddress()),
-		zap.String("role", cfg.GetRole()),
 		zap.Bool("tls", cfg.GetUseTLS()),
 	)
 
@@ -36,20 +36,14 @@ func main() {
 		Timeout:  cfg.GetTimeout(),
 	})
 
-	if err := manager.Connect(); err != nil {
-		log.Fatal("Failed to connect to server", zap.Error(err))
-	} else {
-		log.Info("Connected to server")
+	ctx := context.Background()
+
+	if err := manager.Start(ctx, "node-001", "Worker Node 1"); err != nil {
+		log.Fatal("Failed to start connection manager", zap.Error(err))
 	}
 
-	if err := manager.RegisterNode("node-001", "Worker Node 1", cfg.GetRole()); err != nil {
-		log.Fatal("Failed to register node", zap.Error(err))
-	}
-
-	log.Info("Node registered successfully")
-
-	tm := tasks.TaskManager{}
-
+	tm := tasks.NewTaskManager(ctx)
+	tm.Run()
 	defer tm.Stop()
 
 	sigChan := make(chan os.Signal, 1)

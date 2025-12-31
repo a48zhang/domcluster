@@ -62,14 +62,13 @@ func (m *Manager) Connect() error {
 }
 
 // RegisterNode 注册节点
-func (m *Manager) RegisterNode(nodeID, name, role string) error {
+func (m *Manager) RegisterNode(nodeID, name string) error {
 	m.mu.Lock()
 	m.nodeID = nodeID
 	m.mu.Unlock()
 
 	data := map[string]interface{}{
 		"name":    name,
-		"role":    role,
 		"version": "1.0.0",
 	}
 	dataBytes, _ := json.Marshal(data)
@@ -141,4 +140,41 @@ func (m *Manager) Close() {
 	if m.client != nil {
 		m.client.Close()
 	}
+}
+
+
+func (m *Manager) Start(ctx context.Context, nodeID, nodeName string) error {
+	// 重试连接服务器
+	connectRetryInterval := 5 * time.Second
+	for {
+		if err := m.Connect(); err != nil {
+			log.Printf("Failed to connect to server, retrying in %v: %v", connectRetryInterval, err)
+			select {
+			case <-time.After(connectRetryInterval):
+				continue
+			case <-ctx.Done():
+				return fmt.Errorf("context cancelled while connecting to server: %w", ctx.Err())
+			}
+		}
+		log.Printf("Connected to server")
+		break
+	}
+
+	// 重试注册节点
+	registerRetryInterval := 5 * time.Second
+	for {
+		if err := m.RegisterNode(nodeID, nodeName); err != nil {
+			log.Printf("Failed to register node, retrying in %v: %v", registerRetryInterval, err)
+			select {
+			case <-time.After(registerRetryInterval):
+				continue
+			case <-ctx.Done():
+				return fmt.Errorf("context cancelled while registering node: %w", ctx.Err())
+			}
+		}
+		log.Printf("Node %s registered successfully", nodeID)
+		break
+	}
+
+	return nil
 }
