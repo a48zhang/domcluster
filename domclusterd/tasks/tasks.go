@@ -4,8 +4,6 @@ import (
 	"context"
 	"sync"
 
-	"domclusterd/log"
-
 	"go.uber.org/zap"
 )
 
@@ -44,7 +42,7 @@ func (tm *TaskManager) Add(task Task) error {
 	} else if task.Priority() > 0 {
 		go func() {
 			if err := task.Run(tm.ctx); err != nil {
-				log.Error("high priority task error", zap.Error(err))
+				zap.L().Error("high priority task error", zap.Error(err))
 			}
 		}()
 		return nil

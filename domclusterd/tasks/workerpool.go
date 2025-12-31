@@ -2,7 +2,6 @@ package tasks
 
 import (
 	"context"
-	"domclusterd/log"
 
 	"go.uber.org/zap"
 )
@@ -24,9 +23,9 @@ func NewWorkerPool(ctx context.Context, s int) *WorkerPool {
 					}
 					err := t.Run(ctx)
 					if err != nil {
-						log.Error("task run error", zap.Error(err))
+						zap.L().Error("task run error", zap.Error(err))
 					}
-				case <- ctx.Done():
+				case <-ctx.Done():
 					return
 				}
 			}

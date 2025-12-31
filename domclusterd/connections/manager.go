@@ -4,12 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"sync"
 	"time"
 
 	pb "domcluster/api/proto"
+	"go.uber.org/zap"
 )
+
+// HandlerFunc 请求处理函数类型
+type HandlerFunc func(*pb.PublishResponse) error
 
 // Manager 连接管理器
 type Manager struct {
@@ -22,15 +25,17 @@ type Manager struct {
 	nodeID    string
 	mu        sync.RWMutex
 	connected bool
+	handlers  map[string]HandlerFunc
 }
 
 // NewManager 创建管理器
 func NewManager(config *Config) *Manager {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Manager{
-		config: config,
-		ctx:    ctx,
-		cancel: cancel,
+		config:   config,
+		ctx:      ctx,
+		cancel:   cancel,
+		handlers: make(map[string]HandlerFunc),
 	}
 }
 
@@ -73,7 +78,7 @@ func (m *Manager) RegisterNode(nodeID, name string) error {
 	}
 	dataBytes, _ := json.Marshal(data)
 
-	return m.send("register", nodeID, dataBytes)
+	return m.Send("register", nodeID, dataBytes)
 }
 
 // SendHeartbeat 发送心跳
@@ -90,11 +95,11 @@ func (m *Manager) SendHeartbeat() error {
 		"timestamp": time.Now().Unix(),
 	})
 
-	return m.send("heartbeat", nodeID, dataBytes)
+	return m.Send("heartbeat", nodeID, dataBytes)
 }
 
-// send 发送消息
-func (m *Manager) send(cmd, reqID string, data []byte) error {
+// Send 发送消息
+func (m *Manager) Send(cmd, reqID string, data []byte) error {
 	m.mu.RLock()
 	stream := m.stream
 	m.mu.RUnlock()
@@ -118,7 +123,7 @@ func (m *Manager) receiveLoop() {
 	for {
 		resp, err := m.stream.Recv()
 		if err != nil {
-			fmt.Printf("Receive error: %v\n", err)
+			zap.L().Error("Receive error", zap.Error(err))
 			m.mu.Lock()
 			m.connected = false
 			m.mu.Unlock()
@@ -131,7 +136,50 @@ func (m *Manager) receiveLoop() {
 
 // handleResponse 处理响应
 func (m *Manager) handleResponse(resp *pb.PublishResponse) {
-	log.Printf("Received response: reporter=%s, req_id=%s, status=%d", resp.Reporter, resp.ReqId, resp.Status)
+	zap.L().Sugar().Debugf("Received response: reporter=%s, req_id=%s, status=%d", resp.Reporter, resp.ReqId, resp.Status)
+
+	// 获取 handler 并直接调用
+	if handler, ok := m.getHandler(resp); ok {
+		if err := handler(resp); err != nil {
+			zap.L().Sugar().Errorf("Failed to handle response: reporter=%s, error=%v", resp.Reporter, err)
+		}
+	}
+}
+
+// getHandler 获取处理函数
+func (m *Manager) getHandler(resp *pb.PublishResponse) (HandlerFunc, bool) {
+	// 从响应数据中提取命令类型
+	var data map[string]interface{}
+	if err := json.Unmarshal(resp.Data, &data); err == nil {
+		if cmd, ok := data["cmd"].(string); ok && cmd != "" {
+			m.mu.RLock()
+			handler, ok := m.handlers[cmd]
+			m.mu.RUnlock()
+			return handler, ok
+		}
+	}
+
+	// 默认使用 reporter 作为命令类型
+	m.mu.RLock()
+	handler, ok := m.handlers[resp.Reporter]
+	m.mu.RUnlock()
+	return handler, ok
+}
+
+// RegisterHandler 注册请求处理函数
+func (m *Manager) RegisterHandler(cmd string, handler HandlerFunc) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.handlers[cmd] = handler
+	zap.L().Sugar().Infof("Handler registered for command: %s", cmd)
+}
+
+// UnregisterHandler 取消注册请求处理函数
+func (m *Manager) UnregisterHandler(cmd string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.handlers, cmd)
+	zap.L().Sugar().Infof("Handler unregistered for command: %s", cmd)
 }
 
 // Close 关闭连接
@@ -148,7 +196,7 @@ func (m *Manager) Start(ctx context.Context, nodeID, nodeName string) error {
 	connectRetryInterval := 5 * time.Second
 	for {
 		if err := m.Connect(); err != nil {
-			log.Printf("Failed to connect to server, retrying in %v: %v", connectRetryInterval, err)
+			zap.L().Sugar().Warnf("Failed to connect to server, retrying in %v: %v", connectRetryInterval, err)
 			select {
 			case <-time.After(connectRetryInterval):
 				continue
@@ -156,7 +204,7 @@ func (m *Manager) Start(ctx context.Context, nodeID, nodeName string) error {
 				return fmt.Errorf("context cancelled while connecting to server: %w", ctx.Err())
 			}
 		}
-		log.Printf("Connected to server")
+		zap.L().Sugar().Infof("Connected to server")
 		break
 	}
 
@@ -164,7 +212,7 @@ func (m *Manager) Start(ctx context.Context, nodeID, nodeName string) error {
 	registerRetryInterval := 5 * time.Second
 	for {
 		if err := m.RegisterNode(nodeID, nodeName); err != nil {
-			log.Printf("Failed to register node, retrying in %v: %v", registerRetryInterval, err)
+			zap.L().Sugar().Warnf("Failed to register node, retrying in %v: %v", registerRetryInterval, err)
 			select {
 			case <-time.After(registerRetryInterval):
 				continue
@@ -172,7 +220,7 @@ func (m *Manager) Start(ctx context.Context, nodeID, nodeName string) error {
 				return fmt.Errorf("context cancelled while registering node: %w", ctx.Err())
 			}
 		}
-		log.Printf("Node %s registered successfully", nodeID)
+		zap.L().Sugar().Infof("Node %s registered successfully", nodeID)
 		break
 	}
 

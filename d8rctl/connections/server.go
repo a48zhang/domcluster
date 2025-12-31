@@ -1,10 +1,10 @@
 package connections
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
-	"log"
 	"net"
 	"os"
 	"time"
@@ -12,6 +12,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/keepalive"
+	"go.uber.org/zap"
 )
 
 // Config 服务器配置
@@ -72,13 +73,21 @@ func NewServer(config *Config) (*Server, error) {
 }
 
 // Start 启动服务器
-func (s *Server) Start() error {
+func (s *Server) Start(ctx context.Context) error {
 	lis, err := net.Listen("tcp", s.config.Address)
 	if err != nil {
 		return fmt.Errorf("failed to listen: %w", err)
 	}
 
-	log.Printf("Server listening on %s", s.config.Address)
+	zap.L().Sugar().Infof("Server listening on %s", s.config.Address)
+	
+	// 启动 goroutine 监听 context 取消
+	go func() {
+		<-ctx.Done()
+		zap.L().Sugar().Info("Context cancelled, stopping server...")
+		s.Stop()
+	}()
+	
 	return s.server.Serve(lis)
 }
 

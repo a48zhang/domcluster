@@ -10,8 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"domclusterd/log"
-
 	"go.uber.org/zap"
 )
 
@@ -88,7 +86,7 @@ func NewMonitor(ctx context.Context) *Monitor {
 func (m *Monitor) GetHostInfo() (*HostInfo, error) {
 	hostname, err := os.Hostname()
 	if err != nil {
-		log.Error("failed to get hostname", zap.Error(err))
+		zap.L().Error("failed to get hostname", zap.Error(err))
 		hostname = "unknown"
 	}
 
@@ -105,17 +103,17 @@ func (m *Monitor) GetHostInfo() (*HostInfo, error) {
 func (m *Monitor) GetSystemResources() (*SystemResources, error) {
 	cpuInfo, err := m.getCPUInfo()
 	if err != nil {
-		log.Warn("failed to get CPU info", zap.Error(err))
+		zap.L().Warn("failed to get CPU info", zap.Error(err))
 	}
 
 	memInfo, err := m.getMemoryInfo()
 	if err != nil {
-		log.Warn("failed to get memory info", zap.Error(err))
+		zap.L().Warn("failed to get memory info", zap.Error(err))
 	}
 
 	diskInfo, err := m.getDiskInfo(m.diskPath)
 	if err != nil {
-		log.Warn("failed to get disk info", zap.Error(err))
+		zap.L().Warn("failed to get disk info", zap.Error(err))
 	}
 
 	return &SystemResources{
@@ -262,7 +260,7 @@ func (m *Monitor) getDockerContainers() ([]DockerContainer, error) {
 		}
 
 		if err := json.Unmarshal([]byte(line), &container); err != nil {
-			log.Warn("failed to parse docker container info", zap.String("line", line), zap.Error(err))
+			zap.L().Warn("failed to parse docker container info", zap.String("line", line), zap.Error(err))
 			continue
 		}
 
@@ -297,17 +295,29 @@ func FormatBytes(bytes uint64) string {
 func (m *Monitor) GetMonitorReport() (map[string]interface{}, error) {
 	hostInfo, err := m.GetHostInfo()
 	if err != nil {
-		return nil, err
+		zap.L().Warn("failed to get host info", zap.Error(err))
+		hostInfo = &HostInfo{
+			Hostname:     "unknown",
+			OS:           runtime.GOOS,
+			Architecture: runtime.GOARCH,
+			GoVersion:    runtime.Version(),
+			NumCPU:       runtime.NumCPU(),
+		}
 	}
 
 	systemResources, err := m.GetSystemResources()
 	if err != nil {
-		return nil, err
+		zap.L().Warn("failed to get system resources", zap.Error(err))
+		systemResources = &SystemResources{
+			CPU:    &CPUInfo{},
+			Memory: &MemoryInfo{},
+			Disk:   &DiskInfo{},
+		}
 	}
 
 	dockerInfo, err := m.GetDockerInfo()
 	if err != nil {
-		log.Warn("failed to get docker info", zap.Error(err))
+		zap.L().Warn("failed to get docker info", zap.Error(err))
 		dockerInfo = &DockerInfo{}
 	}
 
