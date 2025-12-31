@@ -2,77 +2,122 @@ package main
 
 import (
 	"context"
-	"domclusterd/config"
-	"domclusterd/connections"
-	"domclusterd/monitor"
-	"domclusterd/tasks"
+	"fmt"
 	"os"
-	"os/signal"
-	"syscall"
-	"time"
 
+	"domclusterd/cli"
+	"domclusterd/daemon"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
+const defaultNodeID = "node-001"
+const defaultNodeName = "Worker Node 1"
+
 func main() {
-	cfg, err := config.Load()
-	if err != nil {
-		panic(err)
+	if len(os.Args) < 2 {
+		printUsage()
+		os.Exit(1)
 	}
 
-	// 初始化 zap logger
-	var logger *zap.Logger
-	if false { // debug mode
-		logger, err = zap.NewDevelopment()
-	} else {
-		logger, err = zap.NewProduction()
+	command := os.Args[1]
+
+	switch command {
+	case "daemon":
+		nodeID := defaultNodeID
+		nodeName := defaultNodeName
+		if len(os.Args) > 2 {
+			nodeID = os.Args[2]
+		}
+		if len(os.Args) > 3 {
+			nodeName = os.Args[3]
+		}
+		runDaemon(nodeID, nodeName)
+	case "start":
+		nodeID := defaultNodeID
+		nodeName := defaultNodeName
+		if len(os.Args) > 2 {
+			nodeID = os.Args[2]
+		}
+		if len(os.Args) > 3 {
+			nodeName = os.Args[3]
+		}
+		if err := cli.Start(nodeID, nodeName); err != nil {
+			fmt.Printf("Error: %v\n", err)
+			os.Exit(1)
+		}
+	case "stop":
+		if err := cli.Stop(); err != nil {
+			fmt.Printf("Error: %v\n", err)
+			os.Exit(1)
+		}
+	case "status":
+		if err := cli.Status(); err != nil {
+			fmt.Printf("Error: %v\n", err)
+			os.Exit(1)
+		}
+	case "logs":
+		lines := 50 // 默认显示 50 行
+		if len(os.Args) > 2 {
+			fmt.Sscanf(os.Args[2], "%d", &lines)
+		}
+		if err := cli.Logs(lines); err != nil {
+			fmt.Printf("Error: %v\n", err)
+			os.Exit(1)
+		}
+	case "restart":
+		if err := cli.Restart(); err != nil {
+			fmt.Printf("Error: %v\n", err)
+			os.Exit(1)
+		}
+	default:
+		fmt.Printf("Unknown command: %s\n", command)
+		printUsage()
+		os.Exit(1)
 	}
+}
+
+func runDaemon(nodeID, nodeName string) {
+	// 初始化 zap logger（输出到文件）
+	logFile, err := os.OpenFile("domclusterd.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
 		panic(err)
 	}
+	defer logFile.Close()
+
+	encoderCfg := zap.NewProductionEncoderConfig()
+	encoderCfg.EncodeTime = zapcore.ISO8601TimeEncoder
+	core := zapcore.NewCore(
+		zapcore.NewJSONEncoder(encoderCfg),
+		zapcore.AddSync(logFile),
+		zapcore.InfoLevel,
+	)
+
+	logger := zap.New(core)
 	defer logger.Sync()
 	zap.ReplaceGlobals(logger)
 
-	zap.L().Info("Starting domclusterd",
-		zap.String("address", cfg.GetAddress()),
-		zap.Bool("tls", cfg.GetUseTLS()),
-	)
-
-	manager := connections.NewManager(&connections.Config{
-		Address:  cfg.GetAddress(),
-		CertFile: "",
-		KeyFile:  "",
-		CAFile:   "",
-		Timeout:  cfg.GetTimeout(),
-	})
-
-	ctx := context.Background()
-
-	if err := manager.Start(ctx, "node-001", "Worker Node 1"); err != nil {
-		zap.L().Fatal("Failed to start connection manager", zap.Error(err))
+	// 创建守护进程
+	d, err := daemon.NewDaemon(nodeID, nodeName)
+	if err != nil {
+		zap.L().Fatal("Failed to create daemon", zap.Error(err))
 	}
 
-	// 创建监控器
-	m := monitor.NewMonitor(ctx)
+	// 运行守护进程
+	ctx := context.Background()
+	if err := d.Run(ctx, nodeID, nodeName); err != nil {
+		zap.L().Fatal("Daemon error", zap.Error(err))
+	}
+}
 
-	// 创建并启动状态报告器（定时上报）
-	reporter := monitor.NewStatusReporter(m, manager)
-	go reporter.Start(2 * time.Second) // 每30秒上报一次状态
-	defer reporter.Stop()
-
-	// 创建并注册查询处理器
-	queryHandler := monitor.NewQueryHandler(m, manager)
-	queryHandler.Register()
-	defer queryHandler.Stop()
-
-	tm := tasks.NewTaskManager(ctx)
-	tm.Run()
-	defer tm.Stop()
-
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-	<-sigChan
-
-	zap.L().Info("Shutting down...")
-	manager.Close()
+func printUsage() {
+	fmt.Println("Usage: domclusterd <command> [nodeID] [nodeName]")
+	fmt.Println()
+	fmt.Println("Commands:")
+	fmt.Println("  daemon [nodeID] [nodeName]  Run as daemon process")
+	fmt.Println("  start [nodeID] [nodeName]  Start daemon in background")
+	fmt.Println("  stop                      Stop daemon")
+	fmt.Println("  status                    Show daemon status")
+	fmt.Println("  logs [n]                  Show last n lines of logs (default: 50)")
+	fmt.Println("  restart                   Restart daemon")
 }

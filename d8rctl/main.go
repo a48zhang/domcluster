@@ -2,63 +2,103 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
-	"os/signal"
-	"syscall"
 
-	"d8rctl/connections"
-	"d8rctl/services"
-	pb "domcluster/api/proto"
+	"d8rctl/cli"
+	"d8rctl/daemon"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 func main() {
-	// 初始化 zap logger
-	var logger *zap.Logger
-	var err error
-	if true { // debug mode
-		logger, err = zap.NewDevelopment()
-	} else {
-		logger, err = zap.NewProduction()
+	if len(os.Args) < 2 {
+		printUsage()
+		os.Exit(1)
 	}
+
+	command := os.Args[1]
+
+	switch command {
+	case "daemon":
+		runDaemon()
+	case "start":
+		if err := cli.Start(); err != nil {
+			fmt.Printf("Error: %v\n", err)
+			os.Exit(1)
+		}
+	case "stop":
+		if err := cli.Stop(); err != nil {
+			fmt.Printf("Error: %v\n", err)
+			os.Exit(1)
+		}
+	case "status":
+		if err := cli.Status(); err != nil {
+			fmt.Printf("Error: %v\n", err)
+			os.Exit(1)
+		}
+	case "logs":
+		lines := 50 // 默认显示 50 行
+		if len(os.Args) > 2 {
+			fmt.Sscanf(os.Args[2], "%d", &lines)
+		}
+		if err := cli.Logs(lines); err != nil {
+			fmt.Printf("Error: %v\n", err)
+			os.Exit(1)
+		}
+	case "restart":
+		if err := cli.Restart(); err != nil {
+			fmt.Printf("Error: %v\n", err)
+			os.Exit(1)
+		}
+	default:
+		fmt.Printf("Unknown command: %s\n", command)
+		printUsage()
+		os.Exit(1)
+	}
+}
+
+func runDaemon() {
+	// 初始化 zap logger（输出到文件）
+	logFile, err := os.OpenFile("d8rctl.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
 		panic(err)
 	}
+	defer logFile.Close()
+
+	encoderCfg := zap.NewProductionEncoderConfig()
+	encoderCfg.EncodeTime = zapcore.ISO8601TimeEncoder
+	core := zapcore.NewCore(
+		zapcore.NewJSONEncoder(encoderCfg),
+		zapcore.AddSync(logFile),
+		zapcore.InfoLevel,
+	)
+
+	logger := zap.New(core)
 	defer logger.Sync()
 	zap.ReplaceGlobals(logger)
 
-	config := &connections.Config{
-		Address:  ":50051",
-		CertFile: "",
-		KeyFile:  "",
-		CAFile:   "",
-	}
-
-	server, err := connections.NewServer(config)
+	// 创建守护进程
+	d, err := daemon.NewDaemon()
 	if err != nil {
-		zap.L().Fatal("Failed to create server", zap.Error(err))
+		zap.L().Fatal("Failed to create daemon", zap.Error(err))
 	}
 
-	// 注册 gRPC 服务
-	pb.RegisterDomclusterServiceServer(server.GetServer(), services.NewDomclusterServer())
-	zap.L().Sugar().Info("gRPC services registered")
-
-	// 创建 context 用于优雅退出
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	// 监听中断信号
-	go func() {
-		sigChan := make(chan os.Signal, 1)
-		signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-		<-sigChan
-		zap.L().Sugar().Info("Received shutdown signal")
-		cancel()
-	}()
-
-	// 启动服务器
-	zap.L().Sugar().Info("Server starting...")
-	if err := server.Start(ctx); err != nil {
-		zap.L().Fatal("Server error", zap.Error(err))
+	// 运行守护进程
+	ctx := context.Background()
+	if err := d.Run(ctx); err != nil {
+		zap.L().Fatal("Daemon error", zap.Error(err))
 	}
+}
+
+func printUsage() {
+	fmt.Println("Usage: d8rctl <command>")
+	fmt.Println()
+	fmt.Println("Commands:")
+	fmt.Println("  daemon   Run as daemon process")
+	fmt.Println("  start    Start daemon in background")
+	fmt.Println("  stop     Stop daemon")
+	fmt.Println("  status   Show daemon status")
+	fmt.Println("  logs [n] Show last n lines of logs (default: 50)")
+	fmt.Println("  restart  Restart daemon")
 }
