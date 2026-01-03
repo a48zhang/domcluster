@@ -8,6 +8,7 @@ import (
 	"syscall"
 	"time"
 
+	"d8rctl/auth"
 	"d8rctl/connections"
 	"d8rctl/services"
 	pb "domcluster/api/proto"
@@ -24,6 +25,11 @@ type Daemon struct {
 
 // NewDaemon 创建守护进程
 func NewDaemon() (*Daemon, error) {
+	// 初始化密码管理器
+	if err := auth.GetPasswordManager().Init(); err != nil {
+		return nil, fmt.Errorf("failed to initialize password manager: %w", err)
+	}
+
 	config := &connections.Config{
 		Address:  ":50051",
 		CertFile: "",

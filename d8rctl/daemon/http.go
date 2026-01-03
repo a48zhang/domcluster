@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"d8rctl/auth"
 	"go.uber.org/zap"
 )
 
@@ -34,9 +35,16 @@ func NewHTTPServer(status *ServerStatus) *HTTPServer {
 		stop:   make(chan struct{}),
 	}
 
-	mux.HandleFunc("/status", hs.handleStatus)
-	mux.HandleFunc("/stop", hs.handleStop)
-	mux.HandleFunc("/restart", hs.handleRestart)
+	// 静态文件服务（web-ui/dist 目录）
+	fs := http.FileServer(http.Dir("../web-ui/dist"))
+	mux.Handle("/", fs)
+
+	// API 路由（需要认证）
+	mux.HandleFunc("/api/status", auth.AuthMiddleware(hs.handleStatus))
+	mux.HandleFunc("/api/stop", auth.AuthMiddleware(hs.handleStop))
+	mux.HandleFunc("/api/restart", auth.AuthMiddleware(hs.handleRestart))
+	mux.HandleFunc("/api/login", hs.handleLogin)
+	mux.HandleFunc("/api/logout", auth.AuthMiddleware(hs.handleLogout))
 
 	hs.server = &http.Server{
 		Addr:    httpAddr,
@@ -66,11 +74,6 @@ func (hs *HTTPServer) handleStatus(w http.ResponseWriter, r *http.Request) {
 
 // handleStop 处理停止请求
 func (hs *HTTPServer) handleStop(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
 	hs.status.Message = "Stopping..."
 	hs.status.Running = false
 
@@ -85,11 +88,6 @@ func (hs *HTTPServer) handleStop(w http.ResponseWriter, r *http.Request) {
 
 // handleRestart 处理重启请求
 func (hs *HTTPServer) handleRestart(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
 	hs.status.Message = "Restarting..."
 
 	w.Header().Set("Content-Type", "application/json")

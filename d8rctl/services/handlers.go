@@ -39,15 +39,14 @@ func (s *DomclusterServer) handleRegister(req *pb.PublishRequest) *pb.PublishRes
 		return errorResponse(req.ReqId, "invalid data")
 	}
 
-	// 安全的类型断言，使用 comma-ok 模式
 	name, ok := data["name"].(string)
 	if !ok {
-		return errorResponse(req.ReqId, "missing name")
+		return nil
 	}
 
 	version, ok := data["version"].(string)
 	if !ok {
-		version = "1.0.0" // 默认版本
+		return nil
 	}
 
 	s.nodeManager.AddNode(req.Issuer, &NodeInfo{

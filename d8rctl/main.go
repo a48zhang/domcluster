@@ -51,6 +51,11 @@ func main() {
 			fmt.Printf("Error: %v\n", err)
 			os.Exit(1)
 		}
+	case "password":
+		if err := cli.Password(os.Args[2:]); err != nil {
+			fmt.Printf("Error: %v\n", err)
+			os.Exit(1)
+		}
 	default:
 		fmt.Printf("Unknown command: %s\n", command)
 		printUsage()
@@ -95,10 +100,11 @@ func printUsage() {
 	fmt.Println("Usage: d8rctl <command>")
 	fmt.Println()
 	fmt.Println("Commands:")
-	fmt.Println("  daemon   Run as daemon process")
-	fmt.Println("  start    Start daemon in background")
-	fmt.Println("  stop     Stop daemon")
-	fmt.Println("  status   Show daemon status")
-	fmt.Println("  logs [n] Show last n lines of logs (default: 50)")
-	fmt.Println("  restart  Restart daemon")
+	fmt.Println("  daemon           Run as daemon process")
+	fmt.Println("  start            Start daemon in background")
+	fmt.Println("  stop             Stop daemon")
+	fmt.Println("  status           Show daemon status")
+	fmt.Println("  logs [n]         Show last n lines of logs (default: 50)")
+	fmt.Println("  restart          Restart daemon")
+	fmt.Println("  password [reset] Show password info or reset password")
 }
