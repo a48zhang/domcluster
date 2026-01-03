@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -10,8 +11,11 @@ import (
 
 	"domclusterd/config"
 	"domclusterd/connections"
+	"domclusterd/dockerctl"
 	"domclusterd/monitor"
 	"domclusterd/tasks"
+
+	pb "domcluster/api/proto"
 	"go.uber.org/zap"
 )
 
@@ -21,6 +25,7 @@ type Daemon struct {
 	httpServer *HTTPServer
 	status     *ServerStatus
 	startTime  time.Time
+	docker     *dockerctl.DockerClient
 }
 
 // NewDaemon 创建守护进程
@@ -47,11 +52,19 @@ func NewDaemon(nodeID, nodeName string) (*Daemon, error) {
 	}
 	httpServer := NewHTTPServer(status)
 
+	// 初始化 Docker 客户端
+	dockerClient, err := dockerctl.NewDockerClient()
+	if err != nil {
+		zap.L().Sugar().Warnf("Failed to initialize Docker client: %v (Docker features will be unavailable)", err)
+		dockerClient = nil
+	}
+
 	return &Daemon{
 		manager:    manager,
 		httpServer: httpServer,
 		status:     status,
 		startTime:  time.Now(),
+		docker:     dockerClient,
 	}, nil
 }
 
@@ -104,6 +117,96 @@ func (d *Daemon) Run(ctx context.Context, nodeID, nodeName string) error {
 	queryHandler.Register()
 	defer queryHandler.Stop()
 
+	// 注册 Docker 处理器
+	if d.docker != nil {
+		dockerHandler := dockerctl.NewHandler(d.docker)
+		d.manager.RegisterHandler("docker_list", func(resp *pb.PublishResponse) error {
+			var data map[string]interface{}
+			if err := json.Unmarshal(resp.Data, &data); err != nil {
+				return err
+			}
+			result, err := dockerHandler.HandleCommand("docker_list", data)
+			if err != nil {
+				return err
+			}
+			return d.manager.Send("docker_response", resp.ReqId, result)
+		})
+
+		d.manager.RegisterHandler("docker_start", func(resp *pb.PublishResponse) error {
+			var data map[string]interface{}
+			if err := json.Unmarshal(resp.Data, &data); err != nil {
+				return err
+			}
+			result, err := dockerHandler.HandleCommand("docker_start", data)
+			if err != nil {
+				return err
+			}
+			return d.manager.Send("docker_response", resp.ReqId, result)
+		})
+
+		d.manager.RegisterHandler("docker_stop", func(resp *pb.PublishResponse) error {
+			var data map[string]interface{}
+			if err := json.Unmarshal(resp.Data, &data); err != nil {
+				return err
+			}
+			result, err := dockerHandler.HandleCommand("docker_stop", data)
+			if err != nil {
+				return err
+			}
+			return d.manager.Send("docker_response", resp.ReqId, result)
+		})
+
+		d.manager.RegisterHandler("docker_restart", func(resp *pb.PublishResponse) error {
+			var data map[string]interface{}
+			if err := json.Unmarshal(resp.Data, &data); err != nil {
+				return err
+			}
+			result, err := dockerHandler.HandleCommand("docker_restart", data)
+			if err != nil {
+				return err
+			}
+			return d.manager.Send("docker_response", resp.ReqId, result)
+		})
+
+		d.manager.RegisterHandler("docker_logs", func(resp *pb.PublishResponse) error {
+			var data map[string]interface{}
+			if err := json.Unmarshal(resp.Data, &data); err != nil {
+				return err
+			}
+			result, err := dockerHandler.HandleCommand("docker_logs", data)
+			if err != nil {
+				return err
+			}
+			return d.manager.Send("docker_response", resp.ReqId, result)
+		})
+
+		d.manager.RegisterHandler("docker_stats", func(resp *pb.PublishResponse) error {
+			var data map[string]interface{}
+			if err := json.Unmarshal(resp.Data, &data); err != nil {
+				return err
+			}
+			result, err := dockerHandler.HandleCommand("docker_stats", data)
+			if err != nil {
+				return err
+			}
+			return d.manager.Send("docker_response", resp.ReqId, result)
+		})
+
+		d.manager.RegisterHandler("docker_inspect", func(resp *pb.PublishResponse) error {
+			var data map[string]interface{}
+			if err := json.Unmarshal(resp.Data, &data); err != nil {
+				return err
+			}
+			result, err := dockerHandler.HandleCommand("docker_inspect", data)
+			if err != nil {
+				return err
+			}
+			return d.manager.Send("docker_response", resp.ReqId, result)
+		})
+
+		zap.L().Sugar().Info("Docker handlers registered")
+	}
+
 	// 创建任务管理器
 	tm := tasks.NewTaskManager(ctx)
 	tm.Run()
@@ -120,6 +223,9 @@ func (d *Daemon) Stop() {
 	d.status.Message = "Stopping"
 	d.httpServer.Stop()
 	d.manager.Close()
+	if d.docker != nil {
+		d.docker.Close()
+	}
 	RemovePID()
 	zap.L().Sugar().Info("Daemon stopped")
 }
