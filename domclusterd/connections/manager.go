@@ -16,26 +16,34 @@ type HandlerFunc func(*pb.PublishResponse) error
 
 // Manager 连接管理器
 type Manager struct {
-	config    *Config
-	client    *Client
-	rpcClient pb.DomclusterServiceClient
-	ctx       context.Context
-	cancel    context.CancelFunc
-	stream    pb.DomclusterService_PublishClient
-	nodeID    string
-	mu        sync.RWMutex
-	connected bool
-	handlers  map[string]HandlerFunc
+	config            *Config
+	client            *Client
+	rpcClient         pb.DomclusterServiceClient
+	ctx               context.Context
+	cancel            context.CancelFunc
+	stream            pb.DomclusterService_PublishClient
+	nodeID            string
+	mu                sync.RWMutex
+	connected         bool
+	handlers          map[string]HandlerFunc
+	connectTimeout    time.Duration
+	heartbeatTimeout  time.Duration
+	heartbeatInterval time.Duration
+	lastHeartbeat     time.Time
 }
 
 // NewManager 创建管理器
 func NewManager(config *Config) *Manager {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Manager{
-		config:   config,
-		ctx:      ctx,
-		cancel:   cancel,
-		handlers: make(map[string]HandlerFunc),
+		config:            config,
+		ctx:               ctx,
+		cancel:            cancel,
+		handlers:          make(map[string]HandlerFunc),
+		connectTimeout:    10 * time.Second,
+		heartbeatTimeout:  15 * time.Second,
+		heartbeatInterval: 5 * time.Second,
+		lastHeartbeat:     time.Now(),
 	}
 }
 
@@ -52,13 +60,17 @@ func (m *Manager) Connect() error {
 	rpcClient := pb.NewDomclusterServiceClient(client.GetConn())
 
 	// 建立流式连接
-	stream, err := rpcClient.Publish(context.Background())
+	connectCtx, cancel := context.WithTimeout(context.Background(), m.connectTimeout)
+	defer cancel()
+
+	stream, err := rpcClient.Publish(connectCtx)
 	if err != nil {
 		return fmt.Errorf("failed to create stream: %w", err)
 	}
 	m.rpcClient = rpcClient
 	m.stream = stream
 	m.connected = true
+	m.lastHeartbeat = time.Now()
 
 	// 启动接收协程
 	go m.receiveLoop()
@@ -120,7 +132,36 @@ func (m *Manager) Send(cmd, reqID string, data []byte) error {
 
 // receiveLoop 接收消息循环
 func (m *Manager) receiveLoop() {
+	heartbeatTicker := time.NewTicker(m.heartbeatInterval)
+	defer heartbeatTicker.Stop()
+
 	for {
+		select {
+		case <-m.ctx.Done():
+			return
+		case <-heartbeatTicker.C:
+			// 检查心跳超时
+			m.mu.RLock()
+			lastHeartbeat := m.lastHeartbeat
+			heartbeatTimeout := m.heartbeatTimeout
+			m.mu.RUnlock()
+
+			if time.Since(lastHeartbeat) > heartbeatTimeout {
+				zap.L().Sugar().Warn("Heartbeat timeout, reconnecting...")
+				m.mu.Lock()
+				m.connected = false
+				m.mu.Unlock()
+				// 触发重连
+				go func() {
+					if err := m.Connect(); err != nil {
+						zap.L().Sugar().Errorf("Failed to reconnect: %v", err)
+					}
+				}()
+				return
+			}
+		default:
+		}
+
 		resp, err := m.stream.Recv()
 		if err != nil {
 			zap.L().Error("Receive error", zap.Error(err))
@@ -129,6 +170,11 @@ func (m *Manager) receiveLoop() {
 			m.mu.Unlock()
 			return
 		}
+
+		// 更新心跳时间
+		m.mu.Lock()
+		m.lastHeartbeat = time.Now()
+		m.mu.Unlock()
 
 		m.handleResponse(resp)
 	}

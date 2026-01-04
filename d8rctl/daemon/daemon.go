@@ -42,8 +42,9 @@ func NewDaemon() (*Daemon, error) {
 		return nil, fmt.Errorf("failed to create server: %w", err)
 	}
 
-	// 注册 gRPC 服务
-	pb.RegisterDomclusterServiceServer(server.GetServer(), services.NewDomclusterServer())
+	// 创建并注册 gRPC 服务
+	domclusterServer := services.NewDomclusterServer()
+	pb.RegisterDomclusterServiceServer(server.GetServer(), domclusterServer)
 
 	// 创建 HTTP 服务器
 	status := &ServerStatus{
@@ -51,7 +52,7 @@ func NewDaemon() (*Daemon, error) {
 		PID:     os.Getpid(),
 		Message: "Running",
 	}
-	httpServer := NewHTTPServer(status)
+	httpServer := NewHTTPServer(status, domclusterServer)
 
 	return &Daemon{
 		server:     server,

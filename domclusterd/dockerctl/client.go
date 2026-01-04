@@ -3,6 +3,7 @@ package dockerctl
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
@@ -25,7 +26,8 @@ type ContainerInfo struct {
 
 // DockerClient Docker 客户端封装
 type DockerClient struct {
-	cli *client.Client
+	cli           *client.Client
+	defaultTimeout time.Duration
 }
 
 // NewDockerClient 创建 Docker 客户端
@@ -36,19 +38,26 @@ func NewDockerClient() (*DockerClient, error) {
 	}
 
 	// 测试连接
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	
 	_, err = cli.Ping(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to docker daemon: %w", err)
 	}
 
 	zap.L().Sugar().Info("Successfully connected to Docker daemon")
-	return &DockerClient{cli: cli}, nil
+	return &DockerClient{
+		cli:           cli,
+		defaultTimeout: 10 * time.Second,
+	}, nil
 }
 
 // ListContainers 列出所有容器
 func (dc *DockerClient) ListContainers(all bool) ([]ContainerInfo, error) {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), dc.defaultTimeout)
+	defer cancel()
+	
 	containers, err := dc.cli.ContainerList(ctx, container.ListOptions{All: all})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list containers: %w", err)
@@ -79,7 +88,9 @@ func (dc *DockerClient) ListContainers(all bool) ([]ContainerInfo, error) {
 
 // InspectContainer 查看容器详情
 func (dc *DockerClient) InspectContainer(containerID string) (types.ContainerJSON, error) {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), dc.defaultTimeout)
+	defer cancel()
+	
 	container, err := dc.cli.ContainerInspect(ctx, containerID)
 	if err != nil {
 		return types.ContainerJSON{}, fmt.Errorf("failed to inspect container: %w", err)
@@ -89,7 +100,9 @@ func (dc *DockerClient) InspectContainer(containerID string) (types.ContainerJSO
 
 // StartContainer 启动容器
 func (dc *DockerClient) StartContainer(containerID string) error {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), dc.defaultTimeout)
+	defer cancel()
+	
 	err := dc.cli.ContainerStart(ctx, containerID, container.StartOptions{})
 	if err != nil {
 		return fmt.Errorf("failed to start container: %w", err)
@@ -100,7 +113,9 @@ func (dc *DockerClient) StartContainer(containerID string) error {
 
 // StopContainer 停止容器
 func (dc *DockerClient) StopContainer(containerID string, timeout int) error {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), dc.defaultTimeout)
+	defer cancel()
+	
 	err := dc.cli.ContainerStop(ctx, containerID, container.StopOptions{
 		Timeout: &timeout,
 	})
@@ -113,7 +128,9 @@ func (dc *DockerClient) StopContainer(containerID string, timeout int) error {
 
 // RestartContainer 重启容器
 func (dc *DockerClient) RestartContainer(containerID string, timeout int) error {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), dc.defaultTimeout)
+	defer cancel()
+	
 	err := dc.cli.ContainerRestart(ctx, containerID, container.StopOptions{
 		Timeout: &timeout,
 	})
@@ -139,7 +156,9 @@ func (dc *DockerClient) RemoveContainer(containerID string, force bool) error {
 
 // GetContainerLogs 获取容器日志
 func (dc *DockerClient) GetContainerLogs(containerID string, tail string) (string, error) {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), dc.defaultTimeout)
+	defer cancel()
+	
 	options := container.LogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
@@ -167,7 +186,9 @@ func (dc *DockerClient) GetContainerLogs(containerID string, tail string) (strin
 
 // GetContainerStats 获取容器统计信息
 func (dc *DockerClient) GetContainerStats(containerID string) ([]byte, error) {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), dc.defaultTimeout)
+	defer cancel()
+	
 	stats, err := dc.cli.ContainerStats(ctx, containerID, false)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get container stats: %w", err)
