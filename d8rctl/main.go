@@ -65,9 +65,10 @@ func main() {
 
 func runDaemon() {
 	// 初始化 zap logger（输出到文件）
-	logFile, err := os.OpenFile("d8rctl.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	logFile, err := os.OpenFile("d8rctl.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, daemon.FilePermission)
 	if err != nil {
-		panic(err)
+		fmt.Printf("Failed to open log file: %v\n", err)
+		os.Exit(1)
 	}
 	defer logFile.Close()
 

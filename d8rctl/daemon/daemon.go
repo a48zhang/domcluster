@@ -120,8 +120,25 @@ func Restart() error {
 		return fmt.Errorf("failed to stop daemon: %w", err)
 	}
 
-	// 等待进程停止
-	time.Sleep(2 * time.Second)
+	// 轮询等待进程停止
+	const maxWaitTime = 30 * time.Second
+	const checkInterval = 500 * time.Millisecond
+	startTime := time.Now()
+
+	for {
+		if !IsRunning() {
+			zap.L().Sugar().Info("Daemon stopped successfully")
+			break
+		}
+
+		elapsed := time.Since(startTime)
+		if elapsed >= maxWaitTime {
+			zap.L().Sugar().Warnf("Daemon did not stop within %v, proceeding with restart", maxWaitTime)
+			break
+		}
+
+		time.Sleep(checkInterval)
+	}
 
 	// 重新启动
 	executable, err := os.Executable()

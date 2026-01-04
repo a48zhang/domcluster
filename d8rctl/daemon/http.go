@@ -1,9 +1,11 @@
 package daemon
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 
 	"d8rctl/auth"
 	"go.uber.org/zap"
@@ -59,8 +61,11 @@ func NewHTTPServer(status *ServerStatus, svc interface{}) *HTTPServer {
 	mux.HandleFunc("/api/docker/nodes", auth.AuthMiddleware(hs.handleDockerNodes))
 
 	hs.server = &http.Server{
-		Addr:    httpAddr,
-		Handler: mux,
+		Addr:         httpAddr,
+		Handler:      mux,
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 10 * time.Second,
+		IdleTimeout:  60 * time.Second,
 	}
 
 	return hs
@@ -75,7 +80,14 @@ func (hs *HTTPServer) Start() error {
 // Stop 停止 HTTP 服务器
 func (hs *HTTPServer) Stop() {
 	close(hs.stop)
-	hs.server.Close()
+
+	// 使用 Shutdown 优雅关闭，支持超时
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if err := hs.server.Shutdown(ctx); err != nil {
+		zap.L().Sugar().Errorf("HTTP server shutdown error: %v", err)
+	}
 }
 
 // handleStatus 处理状态查询

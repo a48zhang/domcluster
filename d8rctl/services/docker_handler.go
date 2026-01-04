@@ -21,20 +21,21 @@ func NewDockerHandler(server *DomclusterServer) *DockerHandler {
 	}
 }
 
-// ListContainers 列出指定节点的容器
-func (h *DockerHandler) ListContainers(ctx context.Context, nodeID string, all bool) (map[string]interface{}, error) {
+// executeDockerCommand 执行 Docker 命令的通用方法
+func (h *DockerHandler) executeDockerCommand(ctx context.Context, nodeID, command string, data map[string]interface{}) ([]byte, error) {
 	resultChan := make(chan *DockerResult, 1)
 	errChan := make(chan error, 1)
 
 	// 发送请求
 	go func() {
-		data := map[string]interface{}{
-			"all": all,
+		dataBytes, err := json.Marshal(data)
+		if err != nil {
+			errChan <- fmt.Errorf("failed to marshal data: %w", err)
+			return
 		}
-		dataBytes, _ := json.Marshal(data)
 
 		reqID := generateReqID()
-		if err := h.sendDockerCommand(nodeID, "docker_list", reqID, dataBytes, resultChan, errChan); err != nil {
+		if err := h.sendDockerCommand(nodeID, command, reqID, dataBytes, resultChan, errChan); err != nil {
 			errChan <- err
 		}
 	}()
@@ -45,225 +46,136 @@ func (h *DockerHandler) ListContainers(ctx context.Context, nodeID string, all b
 		if result.Status != 0 {
 			return nil, fmt.Errorf("docker command failed: %s", string(result.Data))
 		}
-		var containers []map[string]interface{}
-		if err := json.Unmarshal(result.Data, &containers); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal containers: %w", err)
-		}
-		return map[string]interface{}{
-			"containers": containers,
-		}, nil
+		return result.Data, nil
 	case err := <-errChan:
 		return nil, err
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
+}
+
+// ListContainers 列出指定节点的容器
+func (h *DockerHandler) ListContainers(ctx context.Context, nodeID string, all bool) (map[string]interface{}, error) {
+	data := map[string]interface{}{
+		"all": all,
+	}
+	resultData, err := h.executeDockerCommand(ctx, nodeID, "docker_list", data)
+	if err != nil {
+		return nil, err
+	}
+
+	var containers []map[string]interface{}
+	if err := json.Unmarshal(resultData, &containers); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal containers: %w", err)
+	}
+	return map[string]interface{}{
+		"containers": containers,
+	}, nil
 }
 
 // StartContainer 启动容器
 func (h *DockerHandler) StartContainer(ctx context.Context, nodeID, containerID string) (map[string]interface{}, error) {
-	resultChan := make(chan *DockerResult, 1)
-	errChan := make(chan error, 1)
-
-	go func() {
-		data := map[string]interface{}{
-			"container_id": containerID,
-		}
-		dataBytes, _ := json.Marshal(data)
-
-		reqID := generateReqID()
-		if err := h.sendDockerCommand(nodeID, "docker_start", reqID, dataBytes, resultChan, errChan); err != nil {
-			errChan <- err
-		}
-	}()
-
-	select {
-	case result := <-resultChan:
-		if result.Status != 0 {
-			return nil, fmt.Errorf("docker command failed: %s", string(result.Data))
-		}
-		var resp map[string]interface{}
-		if err := json.Unmarshal(result.Data, &resp); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal response: %w", err)
-		}
-		return resp, nil
-	case err := <-errChan:
-		return nil, err
-	case <-ctx.Done():
-		return nil, ctx.Err()
+	data := map[string]interface{}{
+		"container_id": containerID,
 	}
+	resultData, err := h.executeDockerCommand(ctx, nodeID, "docker_start", data)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(resultData, &resp); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+	}
+	return resp, nil
 }
 
 // StopContainer 停止容器
 func (h *DockerHandler) StopContainer(ctx context.Context, nodeID, containerID string, timeout int) (map[string]interface{}, error) {
-	resultChan := make(chan *DockerResult, 1)
-	errChan := make(chan error, 1)
-
-	go func() {
-		data := map[string]interface{}{
-			"container_id": containerID,
-			"timeout":      timeout,
-		}
-		dataBytes, _ := json.Marshal(data)
-
-		reqID := generateReqID()
-		if err := h.sendDockerCommand(nodeID, "docker_stop", reqID, dataBytes, resultChan, errChan); err != nil {
-			errChan <- err
-		}
-	}()
-
-	select {
-	case result := <-resultChan:
-		if result.Status != 0 {
-			return nil, fmt.Errorf("docker command failed: %s", string(result.Data))
-		}
-		var resp map[string]interface{}
-		if err := json.Unmarshal(result.Data, &resp); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal response: %w", err)
-		}
-		return resp, nil
-	case err := <-errChan:
-		return nil, err
-	case <-ctx.Done():
-		return nil, ctx.Err()
+	data := map[string]interface{}{
+		"container_id": containerID,
+		"timeout":      timeout,
 	}
+	resultData, err := h.executeDockerCommand(ctx, nodeID, "docker_stop", data)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(resultData, &resp); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+	}
+	return resp, nil
 }
 
 // RestartContainer 重启容器
 func (h *DockerHandler) RestartContainer(ctx context.Context, nodeID, containerID string, timeout int) (map[string]interface{}, error) {
-	resultChan := make(chan *DockerResult, 1)
-	errChan := make(chan error, 1)
-
-	go func() {
-		data := map[string]interface{}{
-			"container_id": containerID,
-			"timeout":      timeout,
-		}
-		dataBytes, _ := json.Marshal(data)
-
-		reqID := generateReqID()
-		if err := h.sendDockerCommand(nodeID, "docker_restart", reqID, dataBytes, resultChan, errChan); err != nil {
-			errChan <- err
-		}
-	}()
-
-	select {
-	case result := <-resultChan:
-		if result.Status != 0 {
-			return nil, fmt.Errorf("docker command failed: %s", string(result.Data))
-		}
-		var resp map[string]interface{}
-		if err := json.Unmarshal(result.Data, &resp); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal response: %w", err)
-		}
-		return resp, nil
-	case err := <-errChan:
-		return nil, err
-	case <-ctx.Done():
-		return nil, ctx.Err()
+	data := map[string]interface{}{
+		"container_id": containerID,
+		"timeout":      timeout,
 	}
+	resultData, err := h.executeDockerCommand(ctx, nodeID, "docker_restart", data)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(resultData, &resp); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+	}
+	return resp, nil
 }
 
 // GetContainerLogs 获取容器日志
 func (h *DockerHandler) GetContainerLogs(ctx context.Context, nodeID, containerID, tail string) (map[string]interface{}, error) {
-	resultChan := make(chan *DockerResult, 1)
-	errChan := make(chan error, 1)
-
-	go func() {
-		data := map[string]interface{}{
-			"container_id": containerID,
-			"tail":         tail,
-		}
-		dataBytes, _ := json.Marshal(data)
-
-		reqID := generateReqID()
-		if err := h.sendDockerCommand(nodeID, "docker_logs", reqID, dataBytes, resultChan, errChan); err != nil {
-			errChan <- err
-		}
-	}()
-
-	select {
-	case result := <-resultChan:
-		if result.Status != 0 {
-			return nil, fmt.Errorf("docker command failed: %s", string(result.Data))
-		}
-		var resp map[string]interface{}
-		if err := json.Unmarshal(result.Data, &resp); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal response: %w", err)
-		}
-		return resp, nil
-	case err := <-errChan:
-		return nil, err
-	case <-ctx.Done():
-		return nil, ctx.Err()
+	data := map[string]interface{}{
+		"container_id": containerID,
+		"tail":         tail,
 	}
+	resultData, err := h.executeDockerCommand(ctx, nodeID, "docker_logs", data)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(resultData, &resp); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+	}
+	return resp, nil
 }
 
 // GetContainerStats 获取容器统计信息
 func (h *DockerHandler) GetContainerStats(ctx context.Context, nodeID, containerID string) (map[string]interface{}, error) {
-	resultChan := make(chan *DockerResult, 1)
-	errChan := make(chan error, 1)
-
-	go func() {
-		data := map[string]interface{}{
-			"container_id": containerID,
-		}
-		dataBytes, _ := json.Marshal(data)
-
-		reqID := generateReqID()
-		if err := h.sendDockerCommand(nodeID, "docker_stats", reqID, dataBytes, resultChan, errChan); err != nil {
-			errChan <- err
-		}
-	}()
-
-	select {
-	case result := <-resultChan:
-		if result.Status != 0 {
-			return nil, fmt.Errorf("docker command failed: %s", string(result.Data))
-		}
-		var resp map[string]interface{}
-		if err := json.Unmarshal(result.Data, &resp); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal response: %w", err)
-		}
-		return resp, nil
-	case err := <-errChan:
-		return nil, err
-	case <-ctx.Done():
-		return nil, ctx.Err()
+	data := map[string]interface{}{
+		"container_id": containerID,
 	}
+	resultData, err := h.executeDockerCommand(ctx, nodeID, "docker_stats", data)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(resultData, &resp); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+	}
+	return resp, nil
 }
 
 // InspectContainer 查看容器详情
 func (h *DockerHandler) InspectContainer(ctx context.Context, nodeID, containerID string) (map[string]interface{}, error) {
-	resultChan := make(chan *DockerResult, 1)
-	errChan := make(chan error, 1)
-
-	go func() {
-		data := map[string]interface{}{
-			"container_id": containerID,
-		}
-		dataBytes, _ := json.Marshal(data)
-
-		reqID := generateReqID()
-		if err := h.sendDockerCommand(nodeID, "docker_inspect", reqID, dataBytes, resultChan, errChan); err != nil {
-			errChan <- err
-		}
-	}()
-
-	select {
-	case result := <-resultChan:
-		if result.Status != 0 {
-			return nil, fmt.Errorf("docker command failed: %s", string(result.Data))
-		}
-		var resp map[string]interface{}
-		if err := json.Unmarshal(result.Data, &resp); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal response: %w", err)
-		}
-		return resp, nil
-	case err := <-errChan:
-		return nil, err
-	case <-ctx.Done():
-		return nil, ctx.Err()
+	data := map[string]interface{}{
+		"container_id": containerID,
 	}
+	resultData, err := h.executeDockerCommand(ctx, nodeID, "docker_inspect", data)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(resultData, &resp); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+	}
+	return resp, nil
 }
 
 // sendDockerCommand 发送 Docker 命令到指定节点

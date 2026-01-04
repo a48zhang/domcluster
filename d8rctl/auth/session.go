@@ -16,8 +16,10 @@ type Session struct {
 
 // SessionManager 会话管理器
 type SessionManager struct {
-	sessions map[string]*Session
-	mu       sync.RWMutex
+	sessions      map[string]*Session
+	mu            sync.RWMutex
+	cleanupOnce   sync.Once
+	cleanupDone   chan struct{}
 }
 
 var (
@@ -29,7 +31,8 @@ var (
 func GetSessionManager() *SessionManager {
 	sessionOnce.Do(func() {
 		sessionInstance = &SessionManager{
-			sessions: make(map[string]*Session),
+			sessions:    make(map[string]*Session),
+			cleanupDone: make(chan struct{}),
 		}
 	})
 	return sessionInstance
@@ -37,6 +40,13 @@ func GetSessionManager() *SessionManager {
 
 // CreateSession 创建新会话
 func (sm *SessionManager) CreateSession() (string, error) {
+	// 启动清理过期会话的 goroutine（仅启动一次）
+	// 注意：sync.Once 本身是线程安全的，不需要额外的锁保护
+	// 将其放在锁外部可以避免在持有锁时启动 goroutine
+	sm.cleanupOnce.Do(func() {
+		go sm.runCleanupRoutine()
+	})
+
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
@@ -56,9 +66,6 @@ func (sm *SessionManager) CreateSession() (string, error) {
 	}
 
 	sm.sessions[token] = session
-
-	// 启动清理过期会话的 goroutine
-	go sm.cleanupExpiredSessions()
 
 	return token, nil
 }
@@ -87,6 +94,28 @@ func (sm *SessionManager) DeleteSession(token string) {
 	defer sm.mu.Unlock()
 
 	delete(sm.sessions, token)
+}
+
+// Shutdown 关闭会话管理器，停止清理 goroutine
+func (sm *SessionManager) Shutdown() {
+	if sm.cleanupDone != nil {
+		close(sm.cleanupDone)
+	}
+}
+
+// runCleanupRoutine 定期清理过期会话
+func (sm *SessionManager) runCleanupRoutine() {
+	ticker := time.NewTicker(10 * time.Minute)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			sm.cleanupExpiredSessions()
+		case <-sm.cleanupDone:
+			return
+		}
+	}
 }
 
 // cleanupExpiredSessions 清理过期会话

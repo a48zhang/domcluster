@@ -1,6 +1,8 @@
 package config
 
 import (
+	"log"
+
 	"time"
 
 	"github.com/spf13/pflag"
@@ -40,7 +42,18 @@ func Load() (*Config, error) {
 
 	// 读取配置文件
 	v.SetConfigFile("config.yaml")
-	v.ReadInConfig()
+	if err := v.ReadInConfig(); err != nil {
+		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
+			// 配置文件不存在，记录日志并使用默认值
+			log.Printf("配置文件不存在，使用默认配置: %v", err)
+		} else {
+			// 其他错误（如格式错误），记录警告日志并使用默认值
+			log.Printf("读取配置文件失败，使用默认配置: %v", err)
+		}
+	} else {
+		// 读取成功
+		log.Printf("配置文件读取成功: %s", v.ConfigFileUsed())
+	}
 
 	// 解析到结构体
 	roles := v.GetStringSlice("domclusterd.service.role")

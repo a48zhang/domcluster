@@ -31,14 +31,25 @@ func NewDomclusterServer() *DomclusterServer {
 
 // Publish 处理发布流
 func (s *DomclusterServer) Publish(stream pb.DomclusterService_PublishServer) error {
+	var currentIssuer string
+
 	for {
 		req, err := stream.Recv()
 		if err != nil {
 			zap.L().Sugar().Errorf("Publish recv error: %v", err)
+			// 清理 streams map 中的条目
+			if currentIssuer != "" {
+				s.streamsMu.Lock()
+				delete(s.streams, currentIssuer)
+				s.streamsMu.Unlock()
+				zap.L().Sugar().Infof("Removed stream for issuer: %s", currentIssuer)
+			}
 			return err
 		}
 
 		zap.L().Sugar().Debugf("Received: issuer=%s, req_id=%s, cmd=%s", req.Issuer, req.ReqId, req.Cmd)
+
+		currentIssuer = req.Issuer
 
 		// 保存 stream 引用
 		s.streamsMu.Lock()
@@ -57,6 +68,11 @@ func (s *DomclusterServer) Publish(stream pb.DomclusterService_PublishServer) er
 		// 发送回复
 		if err := stream.Send(resp); err != nil {
 			zap.L().Sugar().Errorf("Publish send error: %v", err)
+			// 清理 streams map 中的条目
+			s.streamsMu.Lock()
+			delete(s.streams, req.Issuer)
+			s.streamsMu.Unlock()
+			zap.L().Sugar().Infof("Removed stream for issuer: %s due to send error", req.Issuer)
 			return err
 		}
 	}

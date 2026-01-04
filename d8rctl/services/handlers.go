@@ -41,12 +41,14 @@ func (s *DomclusterServer) handleRegister(req *pb.PublishRequest) *pb.PublishRes
 
 	name, ok := data["name"].(string)
 	if !ok {
-		return nil
+		zap.L().Sugar().Errorf("Type assertion failed for 'name' field in node registration request from %s", req.Issuer)
+		return errorResponse(req.ReqId, "invalid name field")
 	}
 
 	version, ok := data["version"].(string)
 	if !ok {
-		return nil
+		zap.L().Sugar().Errorf("Type assertion failed for 'version' field in node registration request from %s", req.Issuer)
+		return errorResponse(req.ReqId, "invalid version field")
 	}
 
 	s.nodeManager.AddNode(req.Issuer, &NodeInfo{

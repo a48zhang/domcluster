@@ -10,20 +10,23 @@ import (
 
 // StatusCollector 状态收集器
 type StatusCollector struct {
-	mu           sync.RWMutex
-	statusMap    map[string]*NodeStatus
-	nodeTimeout  time.Duration
-	cleanupTick  time.Duration
-	stopChan     chan struct{}
+	mu               sync.RWMutex
+	statusMap        map[string]*NodeStatus
+	nodeTimeout      time.Duration
+	cleanupTick      time.Duration
+	nodeRemovalTimeout time.Duration
+	stopChan         chan struct{}
+	once             sync.Once
 }
 
 // NewStatusCollector 创建状态收集器
-func NewStatusCollector(nodeTimeout, cleanupTick time.Duration) *StatusCollector {
+func NewStatusCollector(nodeTimeout, cleanupTick, nodeRemovalTimeout time.Duration) *StatusCollector {
 	c := &StatusCollector{
-		statusMap:   make(map[string]*NodeStatus),
-		nodeTimeout: nodeTimeout,
-		cleanupTick: cleanupTick,
-		stopChan:    make(chan struct{}),
+		statusMap:           make(map[string]*NodeStatus),
+		nodeTimeout:         nodeTimeout,
+		cleanupTick:         cleanupTick,
+		nodeRemovalTimeout:  nodeRemovalTimeout,
+		stopChan:            make(chan struct{}),
 	}
 	go c.cleanupLoop()
 	return c
@@ -118,9 +121,18 @@ func (c *StatusCollector) cleanup() {
 
 	now := time.Now()
 	for nodeID, status := range c.statusMap {
-		if now.Sub(status.LastUpdate) > c.nodeTimeout {
+		offlineDuration := now.Sub(status.LastUpdate)
+
+		// 标记离线节点
+		if offlineDuration > c.nodeTimeout && status.Online {
 			status.Online = false
 			zap.L().Sugar().Warnf("Node %s marked as offline (timeout)", nodeID)
+		}
+
+		// 删除长时间离线的节点
+		if offlineDuration > c.nodeRemovalTimeout {
+			delete(c.statusMap, nodeID)
+			zap.L().Sugar().Infof("Node %s removed from collector (offline for %v)", nodeID, offlineDuration)
 		}
 	}
 }
@@ -136,5 +148,7 @@ func (c *StatusCollector) RemoveNode(nodeID string) {
 
 // Stop 停止收集器
 func (c *StatusCollector) Stop() {
-	close(c.stopChan)
+	c.once.Do(func() {
+		close(c.stopChan)
+	})
 }

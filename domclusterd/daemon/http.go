@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 
 	"go.uber.org/zap"
 )
@@ -39,8 +40,11 @@ func NewHTTPServer(status *ServerStatus) *HTTPServer {
 	mux.HandleFunc("/restart", hs.handleRestart)
 
 	hs.server = &http.Server{
-		Addr:    httpAddr,
-		Handler: mux,
+		Addr:         httpAddr,
+		Handler:      mux,
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 10 * time.Second,
+		IdleTimeout:  60 * time.Second,
 	}
 
 	return hs

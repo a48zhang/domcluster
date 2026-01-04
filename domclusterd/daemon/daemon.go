@@ -13,7 +13,6 @@ import (
 	"domclusterd/connections"
 	"domclusterd/dockerctl"
 	"domclusterd/monitor"
-	"domclusterd/tasks"
 
 	pb "domcluster/api/proto"
 	"go.uber.org/zap"
@@ -205,12 +204,21 @@ func (d *Daemon) Run(ctx context.Context, nodeID, nodeName string) error {
 		})
 
 		zap.L().Sugar().Info("Docker handlers registered")
+	} else {
+		// Docker 客户端不可用时，注册统一的错误 handler
+		dockerCommands := []string{"docker_list", "docker_start", "docker_stop", "docker_restart", "docker_logs", "docker_stats", "docker_inspect"}
+		for _, cmd := range dockerCommands {
+			d.manager.RegisterHandler(cmd, func(resp *pb.PublishResponse) error {
+				errorData := map[string]interface{}{
+					"error": "Docker client not available on this node",
+					"cmd":   resp.Reporter,
+				}
+				dataBytes, _ := json.Marshal(errorData)
+				return d.manager.Send("docker_response", resp.ReqId, dataBytes)
+			})
+		}
+		zap.L().Sugar().Warn("Docker client not available, Docker handlers registered with error responses")
 	}
-
-	// 创建任务管理器
-	tm := tasks.NewTaskManager(ctx)
-	tm.Run()
-	defer tm.Stop()
 
 	zap.L().Sugar().Info("Daemon running...")
 	return nil
@@ -221,13 +229,47 @@ func (d *Daemon) Stop() {
 	zap.L().Sugar().Info("Stopping daemon...")
 	d.status.Running = false
 	d.status.Message = "Stopping"
-	d.httpServer.Stop()
-	d.manager.Close()
-	if d.docker != nil {
-		d.docker.Close()
+
+	// 通知控制端节点正在停止
+	if d.manager != nil {
+		stopData := map[string]interface{}{
+			"status":  "stopping",
+			"message": "Node is shutting down",
+		}
+		dataBytes, _ := json.Marshal(stopData)
+		// 使用 nodeID 作为 reqID
+		d.manager.Send("node_stopping", d.status.NodeID, dataBytes)
 	}
-	RemovePID()
-	zap.L().Sugar().Info("Daemon stopped")
+
+	// 添加超时机制，确保优雅停止
+	stopTimeout := 30 * time.Second
+	stopDone := make(chan struct{})
+
+	go func() {
+		// 停止 HTTP 服务器
+		d.httpServer.Stop()
+
+		// 关闭连接
+		d.manager.Close()
+
+		// 关闭 Docker 客户端
+		if d.docker != nil {
+			d.docker.Close()
+		}
+
+		// 删除 PID 文件
+		RemovePID()
+
+		close(stopDone)
+	}()
+
+	// 等待停止完成或超时
+	select {
+	case <-stopDone:
+		zap.L().Sugar().Info("Daemon stopped gracefully")
+	case <-time.After(stopTimeout):
+		zap.L().Sugar().Warn("Daemon stop timeout, forcing exit")
+	}
 }
 
 // Restart 重启守护进程
@@ -237,8 +279,25 @@ func Restart() error {
 		return fmt.Errorf("failed to stop daemon: %w", err)
 	}
 
-	// 等待进程停止
-	time.Sleep(2 * time.Second)
+	// 轮询等待进程停止
+	const maxWaitTime = 30 * time.Second
+	const checkInterval = 500 * time.Millisecond
+	startTime := time.Now()
+
+	for {
+		if !IsRunning() {
+			zap.L().Sugar().Info("Daemon stopped successfully")
+			break
+		}
+
+		elapsed := time.Since(startTime)
+		if elapsed >= maxWaitTime {
+			zap.L().Sugar().Warnf("Daemon did not stop within %v, proceeding with restart", maxWaitTime)
+			break
+		}
+
+		time.Sleep(checkInterval)
+	}
 
 	// 重新启动
 	executable, err := os.Executable()

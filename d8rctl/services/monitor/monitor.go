@@ -15,8 +15,8 @@ type Monitor struct {
 
 // NewMonitor 创建监控服务
 func NewMonitor() *Monitor {
-	// 节点超时时间 30 秒，清理间隔 10 秒
-	collector := NewStatusCollector(30*time.Second, 10*time.Second)
+	// 节点超时时间 30 秒，清理间隔 10 秒，节点移除超时时间 1 小时
+	collector := NewStatusCollector(30*time.Second, 10*time.Second, 1*time.Hour)
 
 	return &Monitor{
 		collector: collector,

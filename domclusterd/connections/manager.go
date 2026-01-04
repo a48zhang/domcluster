@@ -23,8 +23,10 @@ type Manager struct {
 	cancel            context.CancelFunc
 	stream            pb.DomclusterService_PublishClient
 	nodeID            string
+	nodeName          string
 	mu                sync.RWMutex
 	connected         bool
+	reconnecting      bool
 	handlers          map[string]HandlerFunc
 	connectTimeout    time.Duration
 	heartbeatTimeout  time.Duration
@@ -72,9 +74,6 @@ func (m *Manager) Connect() error {
 	m.connected = true
 	m.lastHeartbeat = time.Now()
 
-	// 启动接收协程
-	go m.receiveLoop()
-
 	return nil
 }
 
@@ -82,6 +81,7 @@ func (m *Manager) Connect() error {
 func (m *Manager) RegisterNode(nodeID, name string) error {
 	m.mu.Lock()
 	m.nodeID = nodeID
+	m.nodeName = name
 	m.mu.Unlock()
 
 	data := map[string]interface{}{
@@ -147,28 +147,25 @@ func (m *Manager) receiveLoop() {
 			m.mu.RUnlock()
 
 			if time.Since(lastHeartbeat) > heartbeatTimeout {
-				zap.L().Sugar().Warn("Heartbeat timeout, reconnecting...")
-				m.mu.Lock()
-				m.connected = false
-				m.mu.Unlock()
-				// 触发重连
-				go func() {
-					if err := m.Connect(); err != nil {
-						zap.L().Sugar().Errorf("Failed to reconnect: %v", err)
-					}
-				}()
-				return
+				zap.L().Sugar().Warn("Heartbeat timeout, attempting to reconnect...")
+				if err := m.reconnect(); err != nil {
+					zap.L().Sugar().Errorf("Failed to reconnect: %v", err)
+				}
+				continue
 			}
 		default:
 		}
 
 		resp, err := m.stream.Recv()
 		if err != nil {
-			zap.L().Error("Receive error", zap.Error(err))
+			zap.L().Error("Receive error, attempting to reconnect", zap.Error(err))
 			m.mu.Lock()
 			m.connected = false
 			m.mu.Unlock()
-			return
+			if err := m.reconnect(); err != nil {
+				zap.L().Sugar().Errorf("Failed to reconnect: %v", err)
+			}
+			continue
 		}
 
 		// 更新心跳时间
@@ -178,6 +175,70 @@ func (m *Manager) receiveLoop() {
 
 		m.handleResponse(resp)
 	}
+}
+
+// reconnect 重连方法，包含重试机制
+func (m *Manager) reconnect() error {
+	m.mu.Lock()
+	if m.reconnecting {
+		m.mu.Unlock()
+		return fmt.Errorf("already reconnecting")
+	}
+	m.reconnecting = true
+	m.mu.Unlock()
+
+	defer func() {
+		m.mu.Lock()
+		m.reconnecting = false
+		m.mu.Unlock()
+	}()
+
+	maxRetries := 5
+	retryInterval := 5 * time.Second
+
+	for i := 0; i < maxRetries; i++ {
+		select {
+		case <-m.ctx.Done():
+			return fmt.Errorf("context cancelled during reconnection")
+		default:
+		}
+
+		zap.L().Sugar().Infof("Attempting to reconnect (attempt %d/%d)...", i+1, maxRetries)
+
+		if err := m.Connect(); err != nil {
+			zap.L().Sugar().Warnf("Reconnection attempt %d failed: %v", i+1, err)
+			if i < maxRetries-1 {
+				select {
+				case <-time.After(retryInterval):
+					continue
+				case <-m.ctx.Done():
+					return fmt.Errorf("context cancelled during reconnection retry")
+				}
+			}
+			return fmt.Errorf("failed to reconnect after %d attempts: %w", maxRetries, err)
+		}
+
+		zap.L().Sugar().Info("Reconnected successfully")
+
+		// 重连成功后重新注册节点
+		m.mu.RLock()
+		nodeID := m.nodeID
+		nodeName := m.nodeName
+		m.mu.RUnlock()
+
+		if nodeID != "" && nodeName != "" {
+			zap.L().Sugar().Infof("Re-registering node %s...", nodeID)
+			if err := m.RegisterNode(nodeID, nodeName); err != nil {
+				zap.L().Sugar().Warnf("Failed to re-register node: %v", err)
+			} else {
+				zap.L().Sugar().Info("Node re-registered successfully")
+			}
+		}
+
+		return nil
+	}
+
+	return fmt.Errorf("failed to reconnect after %d attempts", maxRetries)
 }
 
 // handleResponse 处理响应
@@ -269,6 +330,14 @@ func (m *Manager) Start(ctx context.Context, nodeID, nodeName string) error {
 		zap.L().Sugar().Infof("Node %s registered successfully", nodeID)
 		break
 	}
+
+	// 注册成功后发送一次心跳
+	if err := m.SendHeartbeat(); err != nil {
+		zap.L().Sugar().Warnf("Failed to send initial heartbeat: %v", err)
+	}
+
+	// 启动接收协程
+	go m.receiveLoop()
 
 	return nil
 }

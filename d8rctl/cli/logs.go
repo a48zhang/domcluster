@@ -1,12 +1,14 @@
 package cli
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os"
 )
 
 const logFile = "d8rctl.log"
+const bufferSize = 4096
 
 // Logs 查看日志
 func Logs(lines int) error {
@@ -22,24 +24,13 @@ func Logs(lines int) error {
 
 	// 读取最后几行
 	if lines > 0 {
-		// 读取所有内容
-		content, err := io.ReadAll(file)
+		logLines, err := readLastLines(file, lines)
 		if err != nil {
 			return fmt.Errorf("failed to read log file: %w", err)
 		}
 
-		// 按行分割
-		logLines := splitLines(string(content))
-		total := len(logLines)
-
-		// 获取最后几行
-		start := 0
-		if total > lines {
-			start = total - lines
-		}
-
-		for i := start; i < total; i++ {
-			fmt.Println(logLines[i])
+		for _, line := range logLines {
+			fmt.Println(line)
 		}
 	} else {
 		// 输出所有内容
@@ -51,18 +42,101 @@ func Logs(lines int) error {
 	return nil
 }
 
-// splitLines 按行分割字符串
-func splitLines(s string) []string {
-	lines := make([]string, 0)
-	start := 0
-	for i := 0; i < len(s); i++ {
-		if s[i] == '\n' {
-			lines = append(lines, s[start:i])
-			start = i + 1
+// readLastLines 从文件末尾向前读取指定行数
+func readLastLines(file *os.File, lines int) ([]string, error) {
+	stat, err := file.Stat()
+	if err != nil {
+		return nil, err
+	}
+
+	fileSize := stat.Size()
+	if fileSize == 0 {
+		return []string{}, nil
+	}
+
+	// 如果文件很小，直接读取全部内容
+	if fileSize <= int64(bufferSize) {
+		content, err := io.ReadAll(file)
+		if err != nil {
+			return nil, err
+		}
+		return extractLastLines(string(content), lines), nil
+	}
+
+	// 大文件：从末尾向前读取
+	var buf []byte
+	var lineCount int
+	var offset int64 = fileSize
+
+	for offset > 0 && lineCount <= lines {
+		chunkSize := bufferSize
+		if offset < int64(chunkSize) {
+			chunkSize = int(offset)
+		}
+		offset -= int64(chunkSize)
+
+		_, err := file.Seek(offset, io.SeekStart)
+		if err != nil {
+			return nil, err
+		}
+
+		chunk := make([]byte, chunkSize)
+		_, err = io.ReadFull(file, chunk)
+		if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+			return nil, err
+		}
+
+		// 从后向前统计换行符
+		foundEnoughLines := false
+		for i := chunkSize - 1; i >= 0; i-- {
+			if chunk[i] == '\n' {
+				lineCount++
+				if lineCount > lines {
+					// 找到足够的换行符，只保留当前 chunk 中从第 lines+1 个换行符之后的部分
+					// 此时不需要之前读取的 chunk 数据，因为我们已经找到了足够的换行符
+					buf = chunk[i+1:]
+					foundEnoughLines = true
+					break
+				}
+			}
+		}
+
+		// 如果还没有找到足够的换行符，继续向前读取
+		if !foundEnoughLines {
+			buf = append(chunk, buf...)
+		} else {
+			// 已经找到足够的换行符，停止读取更多数据
+			break
 		}
 	}
-	if start < len(s) {
-		lines = append(lines, s[start:])
+
+	return extractLastLines(string(buf), lines), nil
+}
+
+// extractLastLines 从字符串中提取最后几行
+func extractLastLines(content string, lines int) []string {
+	if content == "" {
+		return []string{}
 	}
-	return lines
+
+	lineList := bytes.Split([]byte(content), []byte{'\n'})
+	total := len(lineList)
+
+	// 如果最后一行是空的（文件以换行符结尾），去掉它
+	if total > 0 && len(lineList[total-1]) == 0 {
+		total--
+	}
+
+	// 获取最后几行
+	start := 0
+	if total > lines {
+		start = total - lines
+	}
+
+	result := make([]string, 0, total-start)
+	for i := start; i < total; i++ {
+		result = append(result, string(lineList[i]))
+	}
+
+	return result
 }
