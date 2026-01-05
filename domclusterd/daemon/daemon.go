@@ -119,90 +119,22 @@ func (d *Daemon) Run(ctx context.Context, nodeID, nodeName string) error {
 	// 注册 Docker 处理器
 	if d.docker != nil {
 		dockerHandler := dockerctl.NewHandler(d.docker)
-		d.manager.RegisterHandler("docker_list", func(resp *pb.PublishResponse) error {
-			var data map[string]interface{}
-			if err := json.Unmarshal(resp.Data, &data); err != nil {
-				return err
-			}
-			result, err := dockerHandler.HandleCommand("docker_list", data)
-			if err != nil {
-				return err
-			}
-			return d.manager.Send("docker_response", resp.ReqId, result)
-		})
-
-		d.manager.RegisterHandler("docker_start", func(resp *pb.PublishResponse) error {
-			var data map[string]interface{}
-			if err := json.Unmarshal(resp.Data, &data); err != nil {
-				return err
-			}
-			result, err := dockerHandler.HandleCommand("docker_start", data)
-			if err != nil {
-				return err
-			}
-			return d.manager.Send("docker_response", resp.ReqId, result)
-		})
-
-		d.manager.RegisterHandler("docker_stop", func(resp *pb.PublishResponse) error {
-			var data map[string]interface{}
-			if err := json.Unmarshal(resp.Data, &data); err != nil {
-				return err
-			}
-			result, err := dockerHandler.HandleCommand("docker_stop", data)
-			if err != nil {
-				return err
-			}
-			return d.manager.Send("docker_response", resp.ReqId, result)
-		})
-
-		d.manager.RegisterHandler("docker_restart", func(resp *pb.PublishResponse) error {
-			var data map[string]interface{}
-			if err := json.Unmarshal(resp.Data, &data); err != nil {
-				return err
-			}
-			result, err := dockerHandler.HandleCommand("docker_restart", data)
-			if err != nil {
-				return err
-			}
-			return d.manager.Send("docker_response", resp.ReqId, result)
-		})
-
-		d.manager.RegisterHandler("docker_logs", func(resp *pb.PublishResponse) error {
-			var data map[string]interface{}
-			if err := json.Unmarshal(resp.Data, &data); err != nil {
-				return err
-			}
-			result, err := dockerHandler.HandleCommand("docker_logs", data)
-			if err != nil {
-				return err
-			}
-			return d.manager.Send("docker_response", resp.ReqId, result)
-		})
-
-		d.manager.RegisterHandler("docker_stats", func(resp *pb.PublishResponse) error {
-			var data map[string]interface{}
-			if err := json.Unmarshal(resp.Data, &data); err != nil {
-				return err
-			}
-			result, err := dockerHandler.HandleCommand("docker_stats", data)
-			if err != nil {
-				return err
-			}
-			return d.manager.Send("docker_response", resp.ReqId, result)
-		})
-
-		d.manager.RegisterHandler("docker_inspect", func(resp *pb.PublishResponse) error {
-			var data map[string]interface{}
-			if err := json.Unmarshal(resp.Data, &data); err != nil {
-				return err
-			}
-			result, err := dockerHandler.HandleCommand("docker_inspect", data)
-			if err != nil {
-				return err
-			}
-			return d.manager.Send("docker_response", resp.ReqId, result)
-		})
-
+		dockerCommands := []string{"docker_list", "docker_start", "docker_stop", "docker_restart", "docker_logs", "docker_stats", "docker_inspect"}
+		
+		for _, cmd := range dockerCommands {
+			command := cmd
+			d.manager.RegisterHandler(command, func(resp *pb.PublishResponse) error {
+				var data map[string]interface{}
+				if err := json.Unmarshal(resp.Data, &data); err != nil {
+					return err
+				}
+				result, err := dockerHandler.HandleCommand(command, data)
+				if err != nil {
+					return err
+				}
+				return d.manager.Send("docker_response", resp.ReqId, result)
+			})
+		}
 		zap.L().Sugar().Info("Docker handlers registered")
 	} else {
 		// Docker 客户端不可用时，注册统一的错误 handler
