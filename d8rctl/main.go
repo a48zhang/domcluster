@@ -57,6 +57,24 @@ func main() {
 			fmt.Printf("Error: %v\n", err)
 			os.Exit(1)
 		}
+	case "pod":
+		if len(os.Args) < 3 {
+			fmt.Println("Usage: d8rctl pod <command>")
+			fmt.Println("Commands:")
+			fmt.Println("  list    List all connected domclusterd nodes")
+			os.Exit(1)
+		}
+		podCommand := os.Args[2]
+		switch podCommand {
+		case "list":
+			if err := cli.PodList(); err != nil {
+				fmt.Printf("Error: %v\n", err)
+				os.Exit(1)
+			}
+		default:
+			fmt.Printf("Unknown pod command: %s\n", podCommand)
+			os.Exit(1)
+		}
 	default:
 		fmt.Printf("Unknown command: %s\n", command)
 		printUsage()
@@ -114,4 +132,5 @@ func printUsage() {
 	fmt.Println("  logs [n]         Show last n lines of logs (default: 50)")
 	fmt.Println("  restart          Restart daemon")
 	fmt.Println("  password [reset] Show password info or reset password")
+	fmt.Println("  pod list         List all connected domclusterd nodes")
 }

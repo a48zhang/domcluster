@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/user"
 	"path/filepath"
 
 	"domclusterd/cli"
@@ -79,6 +80,18 @@ func main() {
 }
 
 func runDaemon(nodeID, nodeName string) {
+	// 检查是否为 root 用户
+	currentUser, err := user.Current()
+	if err != nil {
+		panic(fmt.Sprintf("Failed to get current user: %v", err))
+	}
+	if currentUser.Uid != "0" {
+		fmt.Fprintf(os.Stderr, "Error: domclusterd must be run as root user\n")
+		fmt.Fprintf(os.Stderr, "Current user: %s (UID: %s)\n", currentUser.Username, currentUser.Uid)
+		fmt.Fprintf(os.Stderr, "Please use: sudo domclusterd daemon\n")
+		os.Exit(1)
+	}
+
 	// 确定日志文件目录
 	logDir := "/var/log/domclusterd"
 	if err := os.MkdirAll(logDir, 0755); err != nil {

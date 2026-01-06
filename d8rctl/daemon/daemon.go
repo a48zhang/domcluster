@@ -21,6 +21,7 @@ import (
 type Daemon struct {
 	server     *connections.Server
 	httpServer *HTTPServer
+	cliServer  *CLIServer
 	status     *ServerStatus
 	startTime  time.Time
 }
@@ -52,10 +53,12 @@ func NewDaemon() (*Daemon, error) {
 		Message: "Running",
 	}
 	httpServer := NewHTTPServer(status, domclusterServer)
+	cliServer := NewCLIServer(domclusterServer)
 
 	return &Daemon{
 		server:     server,
 		httpServer: httpServer,
+		cliServer:  cliServer,
 		status:     status,
 		startTime:  time.Now(),
 	}, nil
@@ -77,6 +80,12 @@ func (d *Daemon) Run(ctx context.Context) error {
 	go func() {
 		if err := d.httpServer.Start(); err != nil {
 			zap.L().Sugar().Error("HTTP server error", zap.Error(err))
+		}
+	}()
+
+	go func() {
+		if err := d.cliServer.Start(); err != nil {
+			zap.L().Sugar().Error("CLI server error", zap.Error(err))
 		}
 	}()
 
@@ -118,6 +127,7 @@ func (d *Daemon) Stop() {
 	d.status.Running = false
 	d.status.Message = "Stopping"
 	d.httpServer.Stop()
+	d.cliServer.Stop()
 	d.server.Stop()
 	RemovePID()
 	zap.L().Sugar().Info("Daemon stopped")

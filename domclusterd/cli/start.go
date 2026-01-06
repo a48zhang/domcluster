@@ -4,12 +4,22 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/user"
 
 	"go.uber.org/zap"
 )
 
 // Start 启动守护进程
 func Start(nodeID, nodeName string) error {
+	// 检查是否为 root 用户
+	currentUser, err := user.Current()
+	if err != nil {
+		return fmt.Errorf("failed to get current user: %w", err)
+	}
+	if currentUser.Uid != "0" {
+		return fmt.Errorf("domclusterd must be run as root user. Please use: sudo domclusterd start")
+	}
+
 	// 检查是否已经在运行
 	if IsRunning() {
 		return fmt.Errorf("daemon is already running")

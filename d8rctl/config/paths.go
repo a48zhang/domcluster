@@ -80,3 +80,12 @@ func EnsureDirs() error {
 
 	return nil
 }
+
+// GetSessionFile 获取会话令牌文件路径
+func GetSessionFile() string {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return filepath.Join("/tmp", ".d8rctl_session")
+	}
+	return filepath.Join(homeDir, ".d8rctl_session")
+}

@@ -2,11 +2,14 @@ package daemon
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"time"
 
 	"d8rctl/auth"
+	"d8rctl/services"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 )
@@ -42,15 +45,17 @@ func NewHTTPServer(status *ServerStatus, svc interface{}) *HTTPServer {
 
 	api := router.Group("/api")
 	{
+		// Web UI 端点 - 需要认证
 		api.POST("/login", hs.handleLogin)
 		api.POST("/logout", auth.GinAuthMiddleware(), hs.handleLogout)
-		
+
 		authRequired := api.Group("")
 		authRequired.Use(auth.GinAuthMiddleware())
 		{
 			authRequired.GET("/status", hs.handleStatus)
 			authRequired.POST("/stop", hs.handleStop)
 			authRequired.POST("/restart", hs.handleRestart)
+			authRequired.GET("/nodes", hs.handleNodes)
 			authRequired.GET("/docker/containers", hs.handleDockerList)
 			authRequired.POST("/docker/start", hs.handleDockerStart)
 			authRequired.POST("/docker/stop", hs.handleDockerStop)
@@ -141,7 +146,15 @@ func GetStatus() (*ServerStatus, error) {
 
 // CallStop 调用停止接口
 func CallStop() error {
-	resp, err := http.Post(fmt.Sprintf("http://%s/api/stop", httpAddr), "application/json", nil)
+	client := &http.Client{
+		Transport: &http.Transport{
+			DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
+				return net.Dial("unix", cliSocketPath)
+			},
+		},
+	}
+
+	resp, err := client.Post("http://unix/stop", "application/json", nil)
 	if err != nil {
 		return err
 	}
@@ -153,4 +166,60 @@ func CallStop() error {
 // GetServer 获取服务实例
 func (hs *HTTPServer) GetServer() interface{} {
 	return hs.svc
+}
+
+// handleNodes 处理节点列表请求
+func (hs *HTTPServer) handleNodes(c *gin.Context) {
+	if hs.svc == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "service not available"})
+		return
+	}
+
+	domclusterServer, ok := hs.svc.(*services.DomclusterServer)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "invalid service type"})
+		return
+	}
+
+	nodeManager := domclusterServer.GetNodeManager()
+	nodes := nodeManager.ListNodes()
+
+	result := make(map[string]interface{})
+	for id, info := range nodes {
+		result[id] = map[string]interface{}{
+			"name":    info.Name,
+			"role":    info.Role,
+			"version": info.Version,
+		}
+	}
+
+	c.JSON(http.StatusOK, result)
+}
+
+// GetNodeList 获取节点列表
+func GetNodeList() (map[string]interface{}, error) {
+	client := &http.Client{
+		Transport: &http.Transport{
+			DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
+				return net.Dial("unix", cliSocketPath)
+			},
+		},
+	}
+
+	resp, err := client.Get("http://unix/nodes")
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed to get node list, status: %d", resp.StatusCode)
+	}
+
+	var nodes map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&nodes); err != nil {
+		return nil, err
+	}
+
+	return nodes, nil
 }
