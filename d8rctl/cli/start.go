@@ -11,12 +11,10 @@ import (
 
 // Start 启动守护进程
 func Start() error {
-	// 检查是否已经在运行
 	if IsRunning() {
 		return fmt.Errorf("daemon is already running")
 	}
 
-	// 初始化日志
 	logger, err := zap.NewProduction()
 	if err != nil {
 		return err
@@ -24,16 +22,14 @@ func Start() error {
 	defer logger.Sync()
 	zap.ReplaceGlobals(logger)
 
-	// 获取可执行文件路径
 	executable, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("failed to get executable: %w", err)
 	}
 
-	// 启动守护进程
 	cmd := exec.Command(executable, "daemon")
-	cmd.Stdout = nil   // 不输出到终端
-	cmd.Stderr = nil   // 不输出到终端
+	cmd.Stdout = nil
+	cmd.Stderr = nil
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		CreationFlags: syscall.CREATE_NEW_PROCESS_GROUP,
 		HideWindow:    true, // Windows: 隐藏窗口

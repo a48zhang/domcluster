@@ -26,7 +26,6 @@ func (h *DockerHandler) executeDockerCommand(ctx context.Context, nodeID, comman
 	resultChan := make(chan *DockerResult, 1)
 	errChan := make(chan error, 1)
 
-	// 发送请求
 	go func() {
 		dataBytes, err := json.Marshal(data)
 		if err != nil {
@@ -47,7 +46,6 @@ func (h *DockerHandler) executeDockerCommand(ctx context.Context, nodeID, comman
 		}
 	}()
 
-	// 等待结果或超时
 	select {
 	case result := <-resultChan:
 		if result.Status != 0 {
@@ -187,10 +185,8 @@ func (h *DockerHandler) InspectContainer(ctx context.Context, nodeID, containerI
 
 // sendDockerCommand 发送 Docker 命令到指定节点
 func (h *DockerHandler) sendDockerCommand(nodeID, cmd, reqID string, data []byte, resultChan chan *DockerResult, errChan chan error) error {
-	// 注册响应处理器
 	h.server.RegisterDockerResponse(reqID, resultChan)
 
-	// 发送命令到节点
 	if err := h.server.SendToNode(nodeID, cmd, reqID, data); err != nil {
 		errChan <- fmt.Errorf("failed to send command to node: %w", err)
 		return err

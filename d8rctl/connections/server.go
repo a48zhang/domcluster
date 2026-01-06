@@ -17,10 +17,10 @@ import (
 
 // Config 服务器配置
 type Config struct {
-	Address   string // 监听地址
-	CertFile  string // 服务器证书
-	KeyFile   string // 服务器密钥
-	CAFile    string // CA 证书
+	Address   string
+	CertFile  string
+	KeyFile   string
+	CAFile    string
 }
 
 // Server gRPC 服务器
@@ -33,7 +33,6 @@ type Server struct {
 func NewServer(config *Config) (*Server, error) {
 	var opts []grpc.ServerOption
 
-	// TLS 配置
 	if config.CertFile != "" && config.KeyFile != "" {
 		tlsConfig := &tls.Config{
 			ClientAuth: tls.RequireAndVerifyClientCert,
@@ -58,7 +57,6 @@ func NewServer(config *Config) (*Server, error) {
 		opts = append(opts, grpc.Creds(credentials.NewTLS(tlsConfig)))
 	}
 
-	// Keepalive
 	opts = append(opts, grpc.KeepaliveParams(keepalive.ServerParameters{
 		MaxConnectionIdle: 5 * time.Minute, // 连接空闲5分钟后关闭
 		MaxConnectionAge:  0,               // 0 表示无限制
@@ -85,8 +83,7 @@ func (s *Server) Start(ctx context.Context) error {
 	}
 
 	zap.L().Sugar().Infof("Server listening on %s", s.config.Address)
-	
-	// 启动 goroutine 监听 context 取消
+
 	go func() {
 		<-ctx.Done()
 		zap.L().Sugar().Info("Context cancelled, stopping server...")

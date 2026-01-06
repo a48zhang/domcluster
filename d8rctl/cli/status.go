@@ -19,7 +19,6 @@ func Status() error {
 		return fmt.Errorf("failed to get status: %w", err)
 	}
 
-	// 格式化输出
 	data, _ := json.MarshalIndent(status, "", "  ")
 	fmt.Println(string(data))
 

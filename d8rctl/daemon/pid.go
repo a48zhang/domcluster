@@ -46,10 +46,8 @@ func IsRunning() bool {
 		return false
 	}
 
-	// 发送信号 0 检查进程是否存在
 	err = process.Signal(syscall.Signal(0))
 	if err != nil {
-		// 进程不存在
 		RemovePID()
 		return false
 	}

@@ -42,9 +42,7 @@ func (pm *PasswordManager) Init() error {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
 
-	// 检查密码文件是否存在
 	if pm.passwordFileExists() {
-		// 读取已存在的密码哈希
 		hash, err := pm.readPasswordHash()
 		if err != nil {
 			return fmt.Errorf("failed to read password hash: %w", err)
@@ -52,22 +50,18 @@ func (pm *PasswordManager) Init() error {
 		pm.passwordHash = hash
 		zap.L().Sugar().Info("Password loaded from file")
 	} else {
-		// 生成新密码
 		password, err := pm.generatePassword()
 		if err != nil {
 			return fmt.Errorf("failed to generate password: %w", err)
 		}
 
-		// 计算密码哈希
 		hash := pm.hashPassword(password)
 		pm.passwordHash = hash
 
-		// 保存密码哈希
 		if err := pm.savePasswordHash(hash); err != nil {
 			return fmt.Errorf("failed to save password hash: %w", err)
 		}
 
-		// 打印密码到日志（首次运行时）
 		zap.L().Sugar().Warnf("========================================")
 		zap.L().Sugar().Warnf("INITIAL PASSWORD: %s", password)
 		zap.L().Sugar().Warnf("Please save this password to access the web interface")
@@ -92,9 +86,6 @@ func (pm *PasswordManager) GetPassword() (string, error) {
 	pm.mu.RLock()
 	defer pm.mu.RUnlock()
 
-	// 注意：这里只能获取密码，不能反向从哈希还原
-	// 实际使用中，密码只在首次生成时显示
-	// 这里返回一个提示信息
 	return "", fmt.Errorf("password cannot be retrieved from hash. Please check the logs for initial password or reset it")
 }
 
@@ -103,17 +94,14 @@ func (pm *PasswordManager) ResetPassword() (string, error) {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
 
-	// 生成新密码
 	password, err := pm.generatePassword()
 	if err != nil {
 		return "", fmt.Errorf("failed to generate password: %w", err)
 	}
 
-	// 计算密码哈希
 	hash := pm.hashPassword(password)
 	pm.passwordHash = hash
 
-	// 保存密码哈希
 	if err := pm.savePasswordHash(hash); err != nil {
 		return "", fmt.Errorf("failed to save password hash: %w", err)
 	}

@@ -44,7 +44,6 @@ func (s *DomclusterServer) Publish(stream pb.DomclusterService_PublishServer) er
 		req, err := stream.Recv()
 		if err != nil {
 			zap.L().Sugar().Errorf("Publish recv error: %v", err)
-			// 清理 streams map 中的条目
 			if currentIssuer != "" {
 				s.streamsMu.Lock()
 				delete(s.streams, currentIssuer)
@@ -58,24 +57,19 @@ func (s *DomclusterServer) Publish(stream pb.DomclusterService_PublishServer) er
 
 		currentIssuer = req.Issuer
 
-		// 保存 stream 引用
 		s.streamsMu.Lock()
 		s.streams[req.Issuer] = stream
 		s.streamsMu.Unlock()
 
-		// 检查是否是 Docker 响应
 		if req.Cmd == "docker_response" {
 			s.handleDockerResponse(req)
 			continue
 		}
 
-		// 根据命令类型处理
 		resp := s.handleRequest(req)
 
-		// 发送回复
 		if err := stream.Send(resp); err != nil {
 			zap.L().Sugar().Errorf("Publish send error: %v", err)
-			// 清理 streams map 中的条目
 			s.streamsMu.Lock()
 			delete(s.streams, req.Issuer)
 			s.streamsMu.Unlock()

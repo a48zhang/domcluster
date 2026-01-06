@@ -9,7 +9,6 @@ import (
 // Password 显示或重置密码
 func Password(args []string) error {
 	if len(args) > 0 && args[0] == "reset" {
-		// 重置密码
 		password, err := auth.GetPasswordManager().ResetPassword()
 		if err != nil {
 			return fmt.Errorf("failed to reset password: %w", err)
@@ -22,7 +21,7 @@ func Password(args []string) error {
 		return nil
 	}
 
-	// 尝试显示密码（实际上无法从哈希还原）
+	// Password cannot be retrieved from hash
 	fmt.Println("Password cannot be retrieved from hash.")
 	fmt.Println()
 	fmt.Println("Options:")

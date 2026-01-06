@@ -22,7 +22,6 @@ func Logs(lines int) error {
 	}
 	defer file.Close()
 
-	// 读取最后几行
 	if lines > 0 {
 		logLines, err := readLastLines(file, lines)
 		if err != nil {
@@ -33,7 +32,6 @@ func Logs(lines int) error {
 			fmt.Println(line)
 		}
 	} else {
-		// 输出所有内容
 		if _, err := io.Copy(os.Stdout, file); err != nil {
 			return fmt.Errorf("failed to read log file: %w", err)
 		}
@@ -127,7 +125,6 @@ func extractLastLines(content string, lines int) []string {
 		total--
 	}
 
-	// 获取最后几行
 	start := 0
 	if total > lines {
 		start = total - lines

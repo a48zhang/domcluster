@@ -2,12 +2,12 @@ package daemon
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
 
 	"d8rctl/auth"
+	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 )
 
@@ -32,37 +32,41 @@ type HTTPServer struct {
 
 // NewHTTPServer 创建 HTTP 服务器
 func NewHTTPServer(status *ServerStatus, svc interface{}) *HTTPServer {
-	mux := http.NewServeMux()
 	hs := &HTTPServer{
 		status: status,
 		stop:   make(chan struct{}),
 		svc:    svc,
 	}
 
-	// 静态文件服务（web-ui/dist 目录）
-	fs := http.FileServer(http.Dir("../web-ui/dist"))
-	mux.Handle("/", fs)
+	router := gin.Default()
 
-	// API 路由（需要认证）
-	mux.HandleFunc("/api/status", auth.AuthMiddleware(hs.handleStatus))
-	mux.HandleFunc("/api/stop", auth.AuthMiddleware(hs.handleStop))
-	mux.HandleFunc("/api/restart", auth.AuthMiddleware(hs.handleRestart))
-	mux.HandleFunc("/api/login", hs.handleLogin)
-	mux.HandleFunc("/api/logout", auth.AuthMiddleware(hs.handleLogout))
+	router.Static("/", "../web-ui/dist")
 
-	// Docker API 路由（需要认证）
-	mux.HandleFunc("/api/docker/containers", auth.AuthMiddleware(hs.handleDockerList))
-	mux.HandleFunc("/api/docker/start", auth.AuthMiddleware(hs.handleDockerStart))
-	mux.HandleFunc("/api/docker/stop", auth.AuthMiddleware(hs.handleDockerStop))
-	mux.HandleFunc("/api/docker/restart", auth.AuthMiddleware(hs.handleDockerRestart))
-	mux.HandleFunc("/api/docker/logs", auth.AuthMiddleware(hs.handleDockerLogs))
-	mux.HandleFunc("/api/docker/stats", auth.AuthMiddleware(hs.handleDockerStats))
-	mux.HandleFunc("/api/docker/inspect", auth.AuthMiddleware(hs.handleDockerInspect))
-	mux.HandleFunc("/api/docker/nodes", auth.AuthMiddleware(hs.handleDockerNodes))
+	api := router.Group("/api")
+	{
+		api.POST("/login", hs.handleLogin)
+		api.POST("/logout", auth.GinAuthMiddleware(), hs.handleLogout)
+		
+		authRequired := api.Group("")
+		authRequired.Use(auth.GinAuthMiddleware())
+		{
+			authRequired.GET("/status", hs.handleStatus)
+			authRequired.POST("/stop", hs.handleStop)
+			authRequired.POST("/restart", hs.handleRestart)
+			authRequired.GET("/docker/containers", hs.handleDockerList)
+			authRequired.POST("/docker/start", hs.handleDockerStart)
+			authRequired.POST("/docker/stop", hs.handleDockerStop)
+			authRequired.POST("/docker/restart", hs.handleDockerRestart)
+			authRequired.GET("/docker/logs", hs.handleDockerLogs)
+			authRequired.GET("/docker/stats", hs.handleDockerStats)
+			authRequired.GET("/docker/inspect", hs.handleDockerInspect)
+			authRequired.GET("/docker/nodes", hs.handleDockerNodes)
+		}
+	}
 
 	hs.server = &http.Server{
 		Addr:         httpAddr,
-		Handler:      mux,
+		Handler:      router,
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  60 * time.Second,
@@ -81,7 +85,6 @@ func (hs *HTTPServer) Start() error {
 func (hs *HTTPServer) Stop() {
 	close(hs.stop)
 
-	// 使用 Shutdown 优雅关闭，支持超时
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -91,49 +94,43 @@ func (hs *HTTPServer) Stop() {
 }
 
 // handleStatus 处理状态查询
-func (hs *HTTPServer) handleStatus(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(hs.status)
+func (hs *HTTPServer) handleStatus(c *gin.Context) {
+	c.JSON(http.StatusOK, hs.status)
 }
 
 // handleStop 处理停止请求
-func (hs *HTTPServer) handleStop(w http.ResponseWriter, r *http.Request) {
+func (hs *HTTPServer) handleStop(c *gin.Context) {
 	hs.status.Message = "Stopping..."
 	hs.status.Running = false
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 
-	// 触发停止
 	go func() {
 		hs.Stop()
 	}()
 }
 
 // handleRestart 处理重启请求
-func (hs *HTTPServer) handleRestart(w http.ResponseWriter, r *http.Request) {
+func (hs *HTTPServer) handleRestart(c *gin.Context) {
 	hs.status.Message = "Restarting..."
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 
-	// 触发重启
 	go func() {
 		hs.Stop()
-		// 重启由外部进程处理
 	}()
 }
 
 // GetStatus 获取状态
 func GetStatus() (*ServerStatus, error) {
-	resp, err := http.Get(fmt.Sprintf("http://%s/status", httpAddr))
+	resp, err := http.Get(fmt.Sprintf("http://%s/api/status", httpAddr))
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 
 	var status ServerStatus
-	if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
+	if err := resp.Body.Close(); err != nil {
 		return nil, err
 	}
 
@@ -142,20 +139,11 @@ func GetStatus() (*ServerStatus, error) {
 
 // CallStop 调用停止接口
 func CallStop() error {
-	resp, err := http.Post(fmt.Sprintf("http://%s/stop", httpAddr), "application/json", nil)
+	resp, err := http.Post(fmt.Sprintf("http://%s/api/stop", httpAddr), "application/json", nil)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
-
-	var result map[string]string
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return err
-	}
-
-	if result["status"] != "ok" {
-		return fmt.Errorf("failed to stop")
-	}
 
 	return nil
 }

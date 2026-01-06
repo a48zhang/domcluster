@@ -2,11 +2,12 @@ package daemon
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"time"
 
 	"d8rctl/services"
+
+	"github.com/gin-gonic/gin"
 )
 
 const (
@@ -14,118 +15,83 @@ const (
 	DefaultRequestTimeout = 60 * time.Second
 )
 
-// sendJSONError 发送 JSON 格式的错误响应
-func sendJSONError(w http.ResponseWriter, statusCode int, message string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(statusCode)
-	json.NewEncoder(w).Encode(map[string]string{"error": message})
-}
-
-// sendJSONResponse 发送 JSON 格式的成功响应
-func sendJSONResponse(w http.ResponseWriter, data interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(data)
-}
-
-// checkMethod 检查 HTTP 方法是否匹配
-func checkMethod(w http.ResponseWriter, r *http.Request, method string) bool {
-	if r.Method != method {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return false
-	}
-	return true
-}
-
 // handleDockerList 处理列出容器请求
-func (hs *HTTPServer) handleDockerList(w http.ResponseWriter, r *http.Request) {
-	if !checkMethod(w, r, http.MethodGet) {
-		return
-	}
-
-	nodeID := r.URL.Query().Get("node_id")
+func (hs *HTTPServer) handleDockerList(c *gin.Context) {
+	nodeID := c.Query("node_id")
 	if nodeID == "" {
-		sendJSONError(w, http.StatusBadRequest, "node_id is required")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "node_id is required"})
 		return
 	}
 
-	allStr := r.URL.Query().Get("all")
+	allStr := c.Query("all")
 	all := allStr == "true" || allStr == "1"
 
-	// 创建带超时的 context
-	ctx, cancel := context.WithTimeout(r.Context(), DefaultRequestTimeout)
+	ctx, cancel := context.WithTimeout(c.Request.Context(), DefaultRequestTimeout)
 	defer cancel()
 
 	dockerHandler := services.NewDockerHandler(hs.svc.(*services.DomclusterServer))
 	result, err := dockerHandler.ListContainers(ctx, nodeID, all)
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
-			sendJSONError(w, http.StatusGatewayTimeout, "request timeout")
+			c.JSON(http.StatusGatewayTimeout, gin.H{"error": "request timeout"})
 		} else {
-			sendJSONError(w, http.StatusInternalServerError, err.Error())
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		}
 		return
 	}
 
-	sendJSONResponse(w, result)
+	c.JSON(http.StatusOK, result)
 }
 
 // handleDockerStart 处理启动容器请求
-func (hs *HTTPServer) handleDockerStart(w http.ResponseWriter, r *http.Request) {
-	if !checkMethod(w, r, http.MethodPost) {
-		return
-	}
-
+func (hs *HTTPServer) handleDockerStart(c *gin.Context) {
 	var req struct {
 		NodeID      string `json:"node_id"`
 		ContainerID string `json:"container_id"`
 	}
 
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		sendJSONError(w, http.StatusBadRequest, "invalid request")
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
 		return
 	}
 
 	if req.NodeID == "" || req.ContainerID == "" {
-		sendJSONError(w, http.StatusBadRequest, "node_id and container_id are required")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "node_id and container_id are required"})
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), DefaultRequestTimeout)
+	ctx, cancel := context.WithTimeout(c.Request.Context(), DefaultRequestTimeout)
 	defer cancel()
 
 	dockerHandler := services.NewDockerHandler(hs.svc.(*services.DomclusterServer))
 	result, err := dockerHandler.StartContainer(ctx, req.NodeID, req.ContainerID)
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
-			sendJSONError(w, http.StatusGatewayTimeout, "request timeout")
+			c.JSON(http.StatusGatewayTimeout, gin.H{"error": "request timeout"})
 		} else {
-			sendJSONError(w, http.StatusInternalServerError, err.Error())
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		}
 		return
 	}
 
-	sendJSONResponse(w, result)
+	c.JSON(http.StatusOK, result)
 }
 
 // handleDockerStop 处理停止容器请求
-func (hs *HTTPServer) handleDockerStop(w http.ResponseWriter, r *http.Request) {
-	if !checkMethod(w, r, http.MethodPost) {
-		return
-	}
-
+func (hs *HTTPServer) handleDockerStop(c *gin.Context) {
 	var req struct {
 		NodeID      string `json:"node_id"`
 		ContainerID string `json:"container_id"`
 		Timeout     int    `json:"timeout"`
 	}
 
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		sendJSONError(w, http.StatusBadRequest, "invalid request")
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
 		return
 	}
 
 	if req.NodeID == "" || req.ContainerID == "" {
-		sendJSONError(w, http.StatusBadRequest, "node_id and container_id are required")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "node_id and container_id are required"})
 		return
 	}
 
@@ -133,42 +99,38 @@ func (hs *HTTPServer) handleDockerStop(w http.ResponseWriter, r *http.Request) {
 		req.Timeout = 10
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), DefaultRequestTimeout)
+	ctx, cancel := context.WithTimeout(c.Request.Context(), DefaultRequestTimeout)
 	defer cancel()
 
 	dockerHandler := services.NewDockerHandler(hs.svc.(*services.DomclusterServer))
 	result, err := dockerHandler.StopContainer(ctx, req.NodeID, req.ContainerID, req.Timeout)
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
-			sendJSONError(w, http.StatusGatewayTimeout, "request timeout")
+			c.JSON(http.StatusGatewayTimeout, gin.H{"error": "request timeout"})
 		} else {
-			sendJSONError(w, http.StatusInternalServerError, err.Error())
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		}
 		return
 	}
 
-	sendJSONResponse(w, result)
+	c.JSON(http.StatusOK, result)
 }
 
 // handleDockerRestart 处理重启容器请求
-func (hs *HTTPServer) handleDockerRestart(w http.ResponseWriter, r *http.Request) {
-	if !checkMethod(w, r, http.MethodPost) {
-		return
-	}
-
+func (hs *HTTPServer) handleDockerRestart(c *gin.Context) {
 	var req struct {
 		NodeID      string `json:"node_id"`
 		ContainerID string `json:"container_id"`
 		Timeout     int    `json:"timeout"`
 	}
 
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		sendJSONError(w, http.StatusBadRequest, "invalid request")
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
 		return
 	}
 
 	if req.NodeID == "" || req.ContainerID == "" {
-		sendJSONError(w, http.StatusBadRequest, "node_id and container_id are required")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "node_id and container_id are required"})
 		return
 	}
 
@@ -176,35 +138,31 @@ func (hs *HTTPServer) handleDockerRestart(w http.ResponseWriter, r *http.Request
 		req.Timeout = 10
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), DefaultRequestTimeout)
+	ctx, cancel := context.WithTimeout(c.Request.Context(), DefaultRequestTimeout)
 	defer cancel()
 
 	dockerHandler := services.NewDockerHandler(hs.svc.(*services.DomclusterServer))
 	result, err := dockerHandler.RestartContainer(ctx, req.NodeID, req.ContainerID, req.Timeout)
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
-			sendJSONError(w, http.StatusGatewayTimeout, "request timeout")
+			c.JSON(http.StatusGatewayTimeout, gin.H{"error": "request timeout"})
 		} else {
-			sendJSONError(w, http.StatusInternalServerError, err.Error())
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		}
 		return
 	}
 
-	sendJSONResponse(w, result)
+	c.JSON(http.StatusOK, result)
 }
 
 // handleDockerLogs 处理获取容器日志请求
-func (hs *HTTPServer) handleDockerLogs(w http.ResponseWriter, r *http.Request) {
-	if !checkMethod(w, r, http.MethodGet) {
-		return
-	}
-
-	nodeID := r.URL.Query().Get("node_id")
-	containerID := r.URL.Query().Get("container_id")
-	tail := r.URL.Query().Get("tail")
+func (hs *HTTPServer) handleDockerLogs(c *gin.Context) {
+	nodeID := c.Query("node_id")
+	containerID := c.Query("container_id")
+	tail := c.Query("tail")
 
 	if nodeID == "" || containerID == "" {
-		sendJSONError(w, http.StatusBadRequest, "node_id and container_id are required")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "node_id and container_id are required"})
 		return
 	}
 
@@ -212,93 +170,79 @@ func (hs *HTTPServer) handleDockerLogs(w http.ResponseWriter, r *http.Request) {
 		tail = "100"
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), DefaultRequestTimeout)
+	ctx, cancel := context.WithTimeout(c.Request.Context(), DefaultRequestTimeout)
 	defer cancel()
 
 	dockerHandler := services.NewDockerHandler(hs.svc.(*services.DomclusterServer))
 	result, err := dockerHandler.GetContainerLogs(ctx, nodeID, containerID, tail)
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
-			sendJSONError(w, http.StatusGatewayTimeout, "request timeout")
+			c.JSON(http.StatusGatewayTimeout, gin.H{"error": "request timeout"})
 		} else {
-			sendJSONError(w, http.StatusInternalServerError, err.Error())
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		}
 		return
 	}
 
-	sendJSONResponse(w, result)
+	c.JSON(http.StatusOK, result)
 }
 
 // handleDockerStats 处理获取容器统计信息请求
-func (hs *HTTPServer) handleDockerStats(w http.ResponseWriter, r *http.Request) {
-	if !checkMethod(w, r, http.MethodGet) {
-		return
-	}
-
-	nodeID := r.URL.Query().Get("node_id")
-	containerID := r.URL.Query().Get("container_id")
+func (hs *HTTPServer) handleDockerStats(c *gin.Context) {
+	nodeID := c.Query("node_id")
+	containerID := c.Query("container_id")
 
 	if nodeID == "" || containerID == "" {
-		sendJSONError(w, http.StatusBadRequest, "node_id and container_id are required")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "node_id and container_id are required"})
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), DefaultRequestTimeout)
+	ctx, cancel := context.WithTimeout(c.Request.Context(), DefaultRequestTimeout)
 	defer cancel()
 
 	dockerHandler := services.NewDockerHandler(hs.svc.(*services.DomclusterServer))
 	result, err := dockerHandler.GetContainerStats(ctx, nodeID, containerID)
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
-			sendJSONError(w, http.StatusGatewayTimeout, "request timeout")
+			c.JSON(http.StatusGatewayTimeout, gin.H{"error": "request timeout"})
 		} else {
-			sendJSONError(w, http.StatusInternalServerError, err.Error())
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		}
 		return
 	}
 
-	sendJSONResponse(w, result)
+	c.JSON(http.StatusOK, result)
 }
 
 // handleDockerInspect 处理查看容器详情请求
-func (hs *HTTPServer) handleDockerInspect(w http.ResponseWriter, r *http.Request) {
-	if !checkMethod(w, r, http.MethodGet) {
-		return
-	}
-
-	nodeID := r.URL.Query().Get("node_id")
-	containerID := r.URL.Query().Get("container_id")
+func (hs *HTTPServer) handleDockerInspect(c *gin.Context) {
+	nodeID := c.Query("node_id")
+	containerID := c.Query("container_id")
 
 	if nodeID == "" || containerID == "" {
-		sendJSONError(w, http.StatusBadRequest, "node_id and container_id are required")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "node_id and container_id are required"})
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), DefaultRequestTimeout)
+	ctx, cancel := context.WithTimeout(c.Request.Context(), DefaultRequestTimeout)
 	defer cancel()
 
 	dockerHandler := services.NewDockerHandler(hs.svc.(*services.DomclusterServer))
 	result, err := dockerHandler.InspectContainer(ctx, nodeID, containerID)
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
-			sendJSONError(w, http.StatusGatewayTimeout, "request timeout")
+			c.JSON(http.StatusGatewayTimeout, gin.H{"error": "request timeout"})
 		} else {
-			sendJSONError(w, http.StatusInternalServerError, err.Error())
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		}
 		return
 	}
 
-	sendJSONResponse(w, result)
+	c.JSON(http.StatusOK, result)
 }
 
 // handleDockerNodes 处理获取所有节点列表
-func (hs *HTTPServer) handleDockerNodes(w http.ResponseWriter, r *http.Request) {
-	if !checkMethod(w, r, http.MethodGet) {
-		return
-	}
-
+func (hs *HTTPServer) handleDockerNodes(c *gin.Context) {
 	nodes := hs.svc.(*services.DomclusterServer).GetNodeManager().ListNodes()
-	sendJSONResponse(w, map[string]interface{}{
-		"nodes": nodes,
-	})
+	c.JSON(http.StatusOK, gin.H{"nodes": nodes})
 }

@@ -40,9 +40,6 @@ func GetSessionManager() *SessionManager {
 
 // CreateSession 创建新会话
 func (sm *SessionManager) CreateSession() (string, error) {
-	// 启动清理过期会话的 goroutine（仅启动一次）
-	// 注意：sync.Once 本身是线程安全的，不需要额外的锁保护
-	// 将其放在锁外部可以避免在持有锁时启动 goroutine
 	sm.cleanupOnce.Do(func() {
 		go sm.runCleanupRoutine()
 	})
@@ -50,19 +47,17 @@ func (sm *SessionManager) CreateSession() (string, error) {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
-	// 生成随机 token
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
 		return "", err
 	}
 	token := hex.EncodeToString(b)
 
-	// 创建会话
 	now := time.Now()
 	session := &Session{
 		Token:     token,
 		CreatedAt: now,
-		ExpiresAt: now.Add(24 * time.Hour), // 会话有效期 24 小时
+		ExpiresAt: now.Add(24 * time.Hour),
 	}
 
 	sm.sessions[token] = session
@@ -80,7 +75,6 @@ func (sm *SessionManager) ValidateSession(token string) bool {
 		return false
 	}
 
-	// 检查是否过期
 	if time.Now().After(session.ExpiresAt) {
 		return false
 	}

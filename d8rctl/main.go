@@ -38,7 +38,7 @@ func main() {
 			os.Exit(1)
 		}
 	case "logs":
-		lines := 50 // 默认显示 50 行
+		lines := 50
 		if len(os.Args) > 2 {
 			fmt.Sscanf(os.Args[2], "%d", &lines)
 		}
@@ -64,7 +64,6 @@ func main() {
 }
 
 func runDaemon() {
-	// 初始化 zap logger（输出到文件）
 	logFile, err := os.OpenFile("d8rctl.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, daemon.FilePermission)
 	if err != nil {
 		fmt.Printf("Failed to open log file: %v\n", err)
@@ -84,13 +83,11 @@ func runDaemon() {
 	defer logger.Sync()
 	zap.ReplaceGlobals(logger)
 
-	// 创建守护进程
 	d, err := daemon.NewDaemon()
 	if err != nil {
 		zap.L().Fatal("Failed to create daemon", zap.Error(err))
 	}
 
-	// 运行守护进程
 	ctx := context.Background()
 	if err := d.Run(ctx); err != nil {
 		zap.L().Fatal("Daemon error", zap.Error(err))

@@ -25,7 +25,6 @@ type Daemon struct {
 
 // NewDaemon 创建守护进程
 func NewDaemon() (*Daemon, error) {
-	// 初始化密码管理器
 	if err := auth.GetPasswordManager().Init(); err != nil {
 		return nil, fmt.Errorf("failed to initialize password manager: %w", err)
 	}
@@ -42,11 +41,9 @@ func NewDaemon() (*Daemon, error) {
 		return nil, fmt.Errorf("failed to create server: %w", err)
 	}
 
-	// 创建并注册 gRPC 服务
 	domclusterServer := services.NewDomclusterServer()
 	pb.RegisterDomclusterServiceServer(server.GetServer(), domclusterServer)
 
-	// 创建 HTTP 服务器
 	status := &ServerStatus{
 		Running: true,
 		PID:     os.Getpid(),
@@ -64,7 +61,6 @@ func NewDaemon() (*Daemon, error) {
 
 // Run 运行守护进程
 func (d *Daemon) Run(ctx context.Context) error {
-	// 写入 PID 文件
 	if err := WritePID(os.Getpid()); err != nil {
 		return fmt.Errorf("failed to write PID file: %w", err)
 	}
@@ -72,14 +68,12 @@ func (d *Daemon) Run(ctx context.Context) error {
 
 	zap.L().Sugar().Infof("Daemon started with PID: %d", os.Getpid())
 
-	// 启动 HTTP 服务器
 	go func() {
 		if err := d.httpServer.Start(); err != nil {
 			zap.L().Sugar().Error("HTTP server error", zap.Error(err))
 		}
 	}()
 
-	// 更新状态
 	go func() {
 		ticker := time.NewTicker(5 * time.Second)
 		defer ticker.Stop()
@@ -93,7 +87,6 @@ func (d *Daemon) Run(ctx context.Context) error {
 		}
 	}()
 
-	// 启动 gRPC 服务器
 	zap.L().Sugar().Info("Starting gRPC server...")
 	if err := d.server.Start(ctx); err != nil {
 		return fmt.Errorf("gRPC server error: %w", err)
@@ -115,12 +108,10 @@ func (d *Daemon) Stop() {
 
 // Restart 重启守护进程
 func Restart() error {
-	// 停止当前进程
 	if err := CallStop(); err != nil {
 		return fmt.Errorf("failed to stop daemon: %w", err)
 	}
 
-	// 轮询等待进程停止
 	const maxWaitTime = 30 * time.Second
 	const checkInterval = 500 * time.Millisecond
 	startTime := time.Now()
@@ -140,7 +131,6 @@ func Restart() error {
 		time.Sleep(checkInterval)
 	}
 
-	// 重新启动
 	executable, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("failed to get executable: %w", err)
