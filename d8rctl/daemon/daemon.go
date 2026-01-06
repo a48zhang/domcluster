@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/signal"
 	"syscall"
 	"time"
 
@@ -88,6 +89,17 @@ func (d *Daemon) Run(ctx context.Context) error {
 	}()
 
 	zap.L().Sugar().Info("Starting gRPC server...")
+	
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGTERM, syscall.SIGINT)
+	
+	go func() {
+		sig := <-sigChan
+		zap.L().Sugar().Infof("Received signal: %v, shutting down...", sig)
+		d.Stop()
+		os.Exit(0)
+	}()
+	
 	if err := d.server.Start(ctx); err != nil {
 		return fmt.Errorf("gRPC server error: %w", err)
 	}
@@ -108,7 +120,7 @@ func (d *Daemon) Stop() {
 
 // Restart 重启守护进程
 func Restart() error {
-	if err := CallStop(); err != nil {
+	if err := Stop(); err != nil {
 		return fmt.Errorf("failed to stop daemon: %w", err)
 	}
 
@@ -131,16 +143,21 @@ func Restart() error {
 		time.Sleep(checkInterval)
 	}
 
+	logFile, err := os.OpenFile("d8rctl.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to open log file: %w", err)
+	}
+
 	executable, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("failed to get executable: %w", err)
 	}
 
 	cmd := exec.Command(executable, "daemon")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	cmd.Stdout = logFile
+	cmd.Stderr = logFile
 	cmd.SysProcAttr = &syscall.SysProcAttr{
-		CreationFlags: syscall.CREATE_NEW_PROCESS_GROUP,
+		Setpgid: true,
 	}
 
 	if err := cmd.Start(); err != nil {

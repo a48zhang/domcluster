@@ -27,12 +27,16 @@ func Start() error {
 		return fmt.Errorf("failed to get executable: %w", err)
 	}
 
+	logFile, err := os.OpenFile("d8rctl.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to open log file: %w", err)
+	}
+
 	cmd := exec.Command(executable, "daemon")
-	cmd.Stdout = nil
-	cmd.Stderr = nil
+	cmd.Stdout = logFile
+	cmd.Stderr = logFile
 	cmd.SysProcAttr = &syscall.SysProcAttr{
-		CreationFlags: syscall.CREATE_NEW_PROCESS_GROUP,
-		HideWindow:    true, // Windows: 隐藏窗口
+		Setpgid: true,
 	}
 
 	if err := cmd.Start(); err != nil {

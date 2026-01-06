@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"syscall"
 
 	"go.uber.org/zap"
 )
@@ -32,12 +31,9 @@ func Start(nodeID, nodeName string) error {
 
 	// 启动守护进程
 	cmd := exec.Command(executable, "daemon", nodeID, nodeName)
-	cmd.Stdout = nil   // 不输出到终端
-	cmd.Stderr = nil   // 不输出到终端
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		CreationFlags: syscall.CREATE_NEW_PROCESS_GROUP,
-		HideWindow:    true, // Windows: 隐藏窗口
-	}
+	cmd.Stdin = nil   // 不从终端读取
+	cmd.Stdout = nil  // 不输出到终端
+	cmd.Stderr = nil  // 不输出到终端
 
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("failed to start daemon: %w", err)

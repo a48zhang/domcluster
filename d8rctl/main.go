@@ -85,11 +85,13 @@ func runDaemon() {
 
 	d, err := daemon.NewDaemon()
 	if err != nil {
+		logger.Sync()
 		zap.L().Fatal("Failed to create daemon", zap.Error(err))
 	}
 
 	ctx := context.Background()
 	if err := d.Run(ctx); err != nil {
+		logger.Sync()
 		zap.L().Fatal("Daemon error", zap.Error(err))
 	}
 }

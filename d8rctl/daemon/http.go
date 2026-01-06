@@ -40,8 +40,6 @@ func NewHTTPServer(status *ServerStatus, svc interface{}) *HTTPServer {
 
 	router := gin.Default()
 
-	router.Static("/", "../web-ui/dist")
-
 	api := router.Group("/api")
 	{
 		api.POST("/login", hs.handleLogin)
@@ -63,6 +61,10 @@ func NewHTTPServer(status *ServerStatus, svc interface{}) *HTTPServer {
 			authRequired.GET("/docker/nodes", hs.handleDockerNodes)
 		}
 	}
+
+	router.NoRoute(func(c *gin.Context) {
+		c.File("../web-ui/dist" + c.Request.URL.Path)
+	})
 
 	hs.server = &http.Server{
 		Addr:         httpAddr,
@@ -123,18 +125,18 @@ func (hs *HTTPServer) handleRestart(c *gin.Context) {
 
 // GetStatus 获取状态
 func GetStatus() (*ServerStatus, error) {
-	resp, err := http.Get(fmt.Sprintf("http://%s/api/status", httpAddr))
+	pid, err := ReadPID()
 	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	var status ServerStatus
-	if err := resp.Body.Close(); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("daemon is not running")
 	}
 
-	return &status, nil
+	status := &ServerStatus{
+		Running: true,
+		PID:     pid,
+		Message: "Running",
+	}
+
+	return status, nil
 }
 
 // CallStop 调用停止接口

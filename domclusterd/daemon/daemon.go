@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/signal"
 	"syscall"
 	"time"
 
@@ -86,7 +87,7 @@ func (d *Daemon) Run(ctx context.Context, nodeID, nodeName string) error {
 	if d.docker != nil {
 		dockerHandler := dockerctl.NewHandler(d.docker)
 		dockerCommands := []string{"docker_list", "docker_start", "docker_stop", "docker_restart", "docker_logs", "docker_stats", "docker_inspect"}
-		
+
 		for _, cmd := range dockerCommands {
 			command := cmd
 			d.manager.RegisterHandler(command, func(resp *pb.PublishResponse) error {
@@ -119,6 +120,18 @@ func (d *Daemon) Run(ctx context.Context, nodeID, nodeName string) error {
 	}
 
 	zap.L().Sugar().Info("Daemon running...")
+
+	// 等待停止信号
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGTERM, syscall.SIGINT)
+
+	select {
+	case sig := <-sigChan:
+		zap.L().Sugar().Infof("Received signal: %v, shutting down...", sig)
+	case <-ctx.Done():
+		zap.L().Sugar().Info("Context canceled, shutting down...")
+	}
+
 	return nil
 }
 
@@ -199,11 +212,9 @@ func Restart() error {
 	}
 
 	cmd := exec.Command(executable, "daemon")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		CreationFlags: syscall.CREATE_NEW_PROCESS_GROUP,
-	}
+	cmd.Stdin = nil   // 不从终端读取
+	cmd.Stdout = nil  // 不输出到终端
+	cmd.Stderr = nil  // 不输出到终端
 
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("failed to start daemon: %w", err)
