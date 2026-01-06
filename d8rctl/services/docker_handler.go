@@ -30,13 +30,20 @@ func (h *DockerHandler) executeDockerCommand(ctx context.Context, nodeID, comman
 	go func() {
 		dataBytes, err := json.Marshal(data)
 		if err != nil {
-			errChan <- fmt.Errorf("failed to marshal data: %w", err)
+			select {
+			case errChan <- fmt.Errorf("failed to marshal data: %w", err):
+			case <-ctx.Done():
+			}
 			return
 		}
 
 		reqID := generateReqID()
 		if err := h.sendDockerCommand(nodeID, command, reqID, dataBytes, resultChan, errChan); err != nil {
-			errChan <- err
+			select {
+			case errChan <- err:
+			case <-ctx.Done():
+			}
+			return
 		}
 	}()
 

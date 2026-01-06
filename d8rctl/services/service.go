@@ -6,27 +6,34 @@ import (
 	pb "domcluster/api/proto"
 	"go.uber.org/zap"
 	"sync"
+	"time"
 )
 
 // DomclusterServer Domcluster 服务端
 type DomclusterServer struct {
 	pb.UnimplementedDomclusterServiceServer
-	nodeManager      *NodeManager
-	monitor          *monitor.Monitor
-	dockerResponses  map[string]chan *DockerResult
-	dockerResponsesMu sync.RWMutex
-	streams          map[string]pb.DomclusterService_PublishServer
-	streamsMu        sync.RWMutex
+	nodeManager              *NodeManager
+	monitor                  *monitor.Monitor
+	dockerResponses          map[string]chan *DockerResult
+	dockerResponseTimestamps map[string]time.Time
+	dockerResponsesMu        sync.RWMutex
+	streams                  map[string]pb.DomclusterService_PublishServer
+	streamsMu                sync.RWMutex
+	cleanupDone              chan struct{}
 }
 
 // NewDomclusterServer 创建 Domcluster 服务端
 func NewDomclusterServer() *DomclusterServer {
-	return &DomclusterServer{
-		nodeManager:     NewNodeManager(),
-		monitor:         monitor.NewMonitor(),
-		dockerResponses: make(map[string]chan *DockerResult),
-		streams:         make(map[string]pb.DomclusterService_PublishServer),
+	s := &DomclusterServer{
+		nodeManager:              NewNodeManager(),
+		monitor:                  monitor.NewMonitor(),
+		dockerResponses:          make(map[string]chan *DockerResult),
+		dockerResponseTimestamps: make(map[string]time.Time),
+		streams:                  make(map[string]pb.DomclusterService_PublishServer),
+		cleanupDone:              make(chan struct{}),
 	}
+	go s.cleanupExpiredResponses()
+	return s
 }
 
 // Publish 处理发布流
@@ -93,6 +100,7 @@ func (s *DomclusterServer) RegisterDockerResponse(reqID string, resultChan chan 
 	s.dockerResponsesMu.Lock()
 	defer s.dockerResponsesMu.Unlock()
 	s.dockerResponses[reqID] = resultChan
+	s.dockerResponseTimestamps[reqID] = time.Now()
 }
 
 // handleDockerResponse 处理 Docker 响应
@@ -102,13 +110,23 @@ func (s *DomclusterServer) handleDockerResponse(req *pb.PublishRequest) {
 	s.dockerResponsesMu.RUnlock()
 
 	if ok {
-		resultChan <- &DockerResult{
+		select {
+		case resultChan <- &DockerResult{
 			Status: 0,
 			Data:   req.Data,
+		}:
+			s.dockerResponsesMu.Lock()
+			delete(s.dockerResponses, req.ReqId)
+			delete(s.dockerResponseTimestamps, req.ReqId)
+			s.dockerResponsesMu.Unlock()
+		default:
+			// channel 已关闭或缓冲区已满
+			zap.L().Sugar().Warnf("Failed to send docker response for reqID: %s, channel may be closed", req.ReqId)
+			s.dockerResponsesMu.Lock()
+			delete(s.dockerResponses, req.ReqId)
+			delete(s.dockerResponseTimestamps, req.ReqId)
+			s.dockerResponsesMu.Unlock()
 		}
-		s.dockerResponsesMu.Lock()
-		delete(s.dockerResponses, req.ReqId)
-		s.dockerResponsesMu.Unlock()
 	}
 }
 
@@ -130,4 +148,43 @@ func (s *DomclusterServer) SendToNode(nodeID, cmd, reqID string, data []byte) er
 	}
 
 	return stream.Send(resp)
+}
+
+// cleanupExpiredResponses 定期清理过期的 docker response channel
+func (s *DomclusterServer) cleanupExpiredResponses() {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			s.cleanupOldResponses()
+		case <-s.cleanupDone:
+			return
+		}
+	}
+}
+
+// cleanupOldResponses 清理超过 5 分钟的响应 channel
+func (s *DomclusterServer) cleanupOldResponses() {
+	s.dockerResponsesMu.Lock()
+	defer s.dockerResponsesMu.Unlock()
+
+	now := time.Now()
+	expiryDuration := 5 * time.Minute
+
+	for reqID, timestamp := range s.dockerResponseTimestamps {
+		if now.Sub(timestamp) > expiryDuration {
+			delete(s.dockerResponses, reqID)
+			delete(s.dockerResponseTimestamps, reqID)
+			zap.L().Sugar().Infof("Cleaned up expired docker response for reqID: %s", reqID)
+		}
+	}
+}
+
+// Shutdown 关闭服务器，停止清理 goroutine
+func (s *DomclusterServer) Shutdown() {
+	if s.cleanupDone != nil {
+		close(s.cleanupDone)
+	}
 }

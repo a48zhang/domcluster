@@ -12,7 +12,7 @@ func Stop() error {
 		return fmt.Errorf("daemon is not running")
 	}
 
-	if err := daemon.CallStop(); err != nil {
+	if err := daemon.Stop(); err != nil {
 		return fmt.Errorf("failed to stop daemon: %w", err)
 	}
 

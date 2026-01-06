@@ -21,8 +21,6 @@ import (
 // Daemon 守护进程
 type Daemon struct {
 	manager    *connections.Manager
-	httpServer *HTTPServer
-	status     *ServerStatus
 	startTime  time.Time
 	docker     *dockerctl.DockerClient
 }
@@ -42,15 +40,6 @@ func NewDaemon(nodeID, nodeName string) (*Daemon, error) {
 		Timeout:  cfg.GetTimeout(),
 	})
 
-	// 创建 HTTP 服务器
-	status := &ServerStatus{
-		Running: true,
-		PID:     os.Getpid(),
-		Message: "Running",
-		NodeID:  nodeID,
-	}
-	httpServer := NewHTTPServer(status)
-
 	// 初始化 Docker 客户端
 	dockerClient, err := dockerctl.NewDockerClient()
 	if err != nil {
@@ -60,8 +49,6 @@ func NewDaemon(nodeID, nodeName string) (*Daemon, error) {
 
 	return &Daemon{
 		manager:    manager,
-		httpServer: httpServer,
-		status:     status,
 		startTime:  time.Now(),
 		docker:     dockerClient,
 	}, nil
@@ -76,27 +63,6 @@ func (d *Daemon) Run(ctx context.Context, nodeID, nodeName string) error {
 	defer RemovePID()
 
 	zap.L().Sugar().Infof("Daemon started with PID: %d, NodeID: %s", os.Getpid(), nodeID)
-
-	// 启动 HTTP 服务器
-	go func() {
-		if err := d.httpServer.Start(); err != nil {
-			zap.L().Sugar().Error("HTTP server error", zap.Error(err))
-		}
-	}()
-
-	// 更新状态
-	go func() {
-		ticker := time.NewTicker(5 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ticker.C:
-				d.status.Uptime = time.Since(d.startTime).String()
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
 
 	// 启动连接管理器
 	if err := d.manager.Start(ctx, nodeID, nodeName); err != nil {
@@ -159,8 +125,6 @@ func (d *Daemon) Run(ctx context.Context, nodeID, nodeName string) error {
 // Stop 停止守护进程
 func (d *Daemon) Stop() {
 	zap.L().Sugar().Info("Stopping daemon...")
-	d.status.Running = false
-	d.status.Message = "Stopping"
 
 	// 通知控制端节点正在停止
 	if d.manager != nil {
@@ -169,8 +133,8 @@ func (d *Daemon) Stop() {
 			"message": "Node is shutting down",
 		}
 		dataBytes, _ := json.Marshal(stopData)
-		// 使用 nodeID 作为 reqID
-		d.manager.Send("node_stopping", d.status.NodeID, dataBytes)
+		// 使用 PID 作为 reqID
+		d.manager.Send("node_stopping", fmt.Sprintf("%d", os.Getpid()), dataBytes)
 	}
 
 	// 添加超时机制，确保优雅停止
@@ -178,9 +142,6 @@ func (d *Daemon) Stop() {
 	stopDone := make(chan struct{})
 
 	go func() {
-		// 停止 HTTP 服务器
-		d.httpServer.Stop()
-
 		// 关闭连接
 		d.manager.Close()
 
@@ -207,7 +168,7 @@ func (d *Daemon) Stop() {
 // Restart 重启守护进程
 func Restart() error {
 	// 停止当前进程
-	if err := CallStop(); err != nil {
+	if err := Stop(); err != nil {
 		return fmt.Errorf("failed to stop daemon: %w", err)
 	}
 
