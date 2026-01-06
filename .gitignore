@@ -1,3 +1,7 @@
 *.exe
 config.yaml
 */node_modules/
+*/dist/
+*.log
+.DS_Store
+built/
