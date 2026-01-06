@@ -4,6 +4,24 @@ import Toast from './Toast';
 import './Dashboard.css';
 
 const Dashboard = ({ onLogout }) => {
+  // 辅助函数：根据使用率获取颜色
+  const getResourceColor = (usage) => {
+    if (usage < 50) return '#28a745';
+    if (usage < 80) return '#ffc107';
+    return '#dc3545';
+  };
+
+  // 辅助函数：格式化最后更新时间
+  const formatLastUpdate = (timestamp) => {
+    const now = new Date();
+    const update = new Date(timestamp);
+    const diff = Math.floor((now - update) / 1000);
+
+    if (diff < 60) return `${diff}秒前`;
+    if (diff < 3600) return `${Math.floor(diff / 60)}分钟前`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)}小时前`;
+    return `${Math.floor(diff / 86400)}天前`;
+  };
   const [status, setStatus] = useState({
     running: false,
     pid: 0,
@@ -11,7 +29,10 @@ const Dashboard = ({ onLogout }) => {
     nodes: 0,
     message: '',
   });
+  const [nodes, setNodes] = useState({});
+  const [nodeStatuses, setNodeStatuses] = useState({});
   const [loading, setLoading] = useState(true);
+  const [nodesLoading, setNodesLoading] = useState(true);
   const [modal, setModal] = useState({ isOpen: false, action: null, title: '' });
   const [toast, setToast] = useState(null);
 
@@ -32,10 +53,50 @@ const Dashboard = ({ onLogout }) => {
     }
   };
 
+  const loadNodes = async () => {
+    try {
+      const response = await fetch('/api/nodes');
+      if (response.status === 401) {
+        onLogout();
+        return;
+      }
+      const data = await response.json();
+      setNodes(data);
+
+      // 加载每个节点的状态
+      const nodeIds = Object.keys(data);
+      const statuses = {};
+      await Promise.all(
+        nodeIds.map(async (nodeId) => {
+          try {
+            const statusResponse = await fetch(`/api/nodes/${nodeId}/status`);
+            if (statusResponse.ok) {
+              const statusData = await statusResponse.json();
+              statuses[nodeId] = statusData;
+            }
+          } catch (error) {
+            console.error(`Failed to load status for node ${nodeId}:`, error);
+          }
+        })
+      );
+      setNodeStatuses(statuses);
+    } catch (error) {
+      console.error('Failed to load nodes:', error);
+      setToast({ message: '加载节点列表失败', type: 'error' });
+    } finally {
+      setNodesLoading(false);
+    }
+  };
+
   useEffect(() => {
     loadStatus();
-    const interval = setInterval(loadStatus, 5000);
-    return () => clearInterval(interval);
+    loadNodes();
+    const statusInterval = setInterval(loadStatus, 5000);
+    const nodesInterval = setInterval(loadNodes, 10000);
+    return () => {
+      clearInterval(statusInterval);
+      clearInterval(nodesInterval);
+    };
   }, []);
 
   const handleStop = async () => {
@@ -144,6 +205,94 @@ const Dashboard = ({ onLogout }) => {
               重启服务
             </button>
           </div>
+        </div>
+
+        <div className="nodes-card">
+          <h2>已连接的节点</h2>
+          {nodesLoading ? (
+            <div className="loading">加载中...</div>
+          ) : Object.keys(nodes).length === 0 ? (
+            <div className="empty-state">
+              <p>暂无连接的节点</p>
+            </div>
+          ) : (
+            <div className="nodes-grid">
+              {Object.entries(nodes).map(([nodeId, nodeInfo]) => {
+                const nodeStatus = nodeStatuses[nodeId];
+                return (
+                  <div key={nodeId} className="node-card">
+                    <div className="node-header">
+                      <h3 className="node-name">{nodeInfo.name}</h3>
+                      <span className="node-id">{nodeId}</span>
+                    </div>
+                    <div className="node-info">
+                      <div className="node-info-item">
+                        <span className="node-info-label">角色</span>
+                        <span className="node-info-value">{nodeInfo.role || 'worker'}</span>
+                      </div>
+                      <div className="node-info-item">
+                        <span className="node-info-label">版本</span>
+                        <span className="node-info-value">{nodeInfo.version || 'unknown'}</span>
+                      </div>
+                    </div>
+                    {nodeStatus && nodeStatus.system_resources && (
+                      <div className="node-resources">
+                        <div className="resource-item">
+                          <span className="resource-label">CPU</span>
+                          <div className="resource-bar">
+                            <div
+                              className="resource-fill"
+                              style={{
+                                width: `${nodeStatus.system_resources.cpu?.usage_percent || 0}%`,
+                                backgroundColor: getResourceColor(nodeStatus.system_resources.cpu?.usage_percent || 0)
+                              }}
+                            ></div>
+                          </div>
+                          <span className="resource-value">
+                            {nodeStatus.system_resources.cpu?.usage_percent?.toFixed(1) || 0}%
+                          </span>
+                        </div>
+                        <div className="resource-item">
+                          <span className="resource-label">内存</span>
+                          <div className="resource-bar">
+                            <div
+                              className="resource-fill"
+                              style={{
+                                width: `${nodeStatus.system_resources.memory?.usage_percent || 0}%`,
+                                backgroundColor: getResourceColor(nodeStatus.system_resources.memory?.usage_percent || 0)
+                              }}
+                            ></div>
+                          </div>
+                          <span className="resource-value">
+                            {nodeStatus.system_resources.memory?.usage_percent?.toFixed(1) || 0}%
+                          </span>
+                        </div>
+                        {nodeStatus.docker && (
+                          <div className="docker-info">
+                            <span className="docker-label">容器</span>
+                            <span className="docker-value">
+                              {nodeStatus.docker.running_count}/{nodeStatus.docker.total_count}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    <div className="node-status">
+                      <span className={`status-indicator ${nodeStatus?.online ? 'online' : 'offline'}`}></span>
+                      <span className="status-text">
+                        {nodeStatus?.online ? '在线' : '离线'}
+                      </span>
+                      {nodeStatus?.last_update && (
+                        <span className="last-update">
+                          {formatLastUpdate(nodeStatus.last_update)}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </main>
 

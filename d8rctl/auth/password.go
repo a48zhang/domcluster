@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
-	"path/filepath"
 	"sync"
 
 	"go.uber.org/zap"
@@ -77,8 +76,15 @@ func (pm *PasswordManager) Verify(password string) bool {
 	pm.mu.RLock()
 	defer pm.mu.RUnlock()
 
+	// 每次验证时从文件读取最新的密码哈希
+	currentHash, err := pm.readPasswordHash()
+	if err != nil {
+		zap.L().Sugar().Error("Failed to read password hash", zap.Error(err))
+		return false
+	}
+
 	hash := pm.hashPassword(password)
-	return hash == pm.passwordHash
+	return hash == currentHash
 }
 
 // GetPassword 获取密码（仅用于 CLI 命令显示）
@@ -133,11 +139,7 @@ func (pm *PasswordManager) savePasswordHash(hash string) error {
 
 // getPasswordFilePath 获取密码文件路径
 func (pm *PasswordManager) getPasswordFilePath() string {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		homeDir = "."
-	}
-	return filepath.Join(homeDir, passwordFile)
+	return "/run/d8rctl/password"
 }
 
 // generatePassword 生成随机密码

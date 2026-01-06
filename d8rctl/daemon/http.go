@@ -50,22 +50,22 @@ func NewHTTPServer(status *ServerStatus, svc interface{}) *HTTPServer {
 		api.POST("/logout", auth.GinAuthMiddleware(), hs.handleLogout)
 
 		authRequired := api.Group("")
-		authRequired.Use(auth.GinAuthMiddleware())
-		{
-			authRequired.GET("/status", hs.handleStatus)
-			authRequired.POST("/stop", hs.handleStop)
-			authRequired.POST("/restart", hs.handleRestart)
-			authRequired.GET("/nodes", hs.handleNodes)
-			authRequired.GET("/docker/containers", hs.handleDockerList)
-			authRequired.POST("/docker/start", hs.handleDockerStart)
-			authRequired.POST("/docker/stop", hs.handleDockerStop)
-			authRequired.POST("/docker/restart", hs.handleDockerRestart)
-			authRequired.GET("/docker/logs", hs.handleDockerLogs)
-			authRequired.GET("/docker/stats", hs.handleDockerStats)
-			authRequired.GET("/docker/inspect", hs.handleDockerInspect)
-			authRequired.GET("/docker/nodes", hs.handleDockerNodes)
-		}
-	}
+			authRequired.Use(auth.GinAuthMiddleware())
+				{
+					authRequired.GET("/status", hs.handleStatus)
+					authRequired.POST("/stop", hs.handleStop)
+					authRequired.POST("/restart", hs.handleRestart)
+					authRequired.GET("/nodes", hs.handleNodes)
+					authRequired.GET("/nodes/:nodeId/status", hs.handleNodeStatus)
+					authRequired.GET("/docker/containers", hs.handleDockerList)
+					authRequired.POST("/docker/start", hs.handleDockerStart)
+					authRequired.POST("/docker/stop", hs.handleDockerStop)
+					authRequired.POST("/docker/restart", hs.handleDockerRestart)
+					authRequired.GET("/docker/logs", hs.handleDockerLogs)
+					authRequired.GET("/docker/stats", hs.handleDockerStats)
+					authRequired.GET("/docker/inspect", hs.handleDockerInspect)
+					authRequired.GET("/docker/nodes", hs.handleDockerNodes)
+				}	}
 
 	router.NoRoute(func(c *gin.Context) {
 		c.File("../web-ui/dist" + c.Request.URL.Path)
@@ -194,6 +194,41 @@ func (hs *HTTPServer) handleNodes(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, result)
+}
+
+// handleNodeStatus 处理获取单个节点状态请求
+func (hs *HTTPServer) handleNodeStatus(c *gin.Context) {
+	if hs.svc == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "service not available"})
+		return
+	}
+
+	domclusterServer, ok := hs.svc.(*services.DomclusterServer)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "invalid service type"})
+		return
+	}
+
+	nodeID := c.Param("nodeId")
+	if nodeID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "node ID is required"})
+		return
+	}
+
+	monitor := domclusterServer.GetMonitor()
+	if monitor == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "monitor not available"})
+		return
+	}
+
+	collector := monitor.GetCollector()
+	status, exists := collector.GetStatus(nodeID)
+	if !exists {
+		c.JSON(http.StatusNotFound, gin.H{"error": "node not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, status)
 }
 
 // GetNodeList 获取节点列表
