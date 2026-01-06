@@ -92,18 +92,10 @@ func runDaemon(nodeID, nodeName string) {
 		os.Exit(1)
 	}
 
-	// 确定日志文件目录
+	// 确定日志文件目录 - 强制使用 /var/log/domclusterd/
 	logDir := "/var/log/domclusterd"
 	if err := os.MkdirAll(logDir, 0755); err != nil {
-		// 如果没有权限，使用 ~/.local/log/domclusterd/
-		homeDir, err := os.UserHomeDir()
-		if err == nil {
-			logDir = filepath.Join(homeDir, ".local", "log", "domclusterd")
-			os.MkdirAll(logDir, 0755)
-		} else {
-			// 如果都失败，使用当前目录
-			logDir = "."
-		}
+		panic(fmt.Sprintf("Failed to create log directory %s: %v. Please run as root.", logDir, err))
 	}
 	logFile := filepath.Join(logDir, "domclusterd.log")
 

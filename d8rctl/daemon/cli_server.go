@@ -13,7 +13,7 @@ import (
 	"go.uber.org/zap"
 )
 
-const cliSocketPath = "/tmp/d8rctl.sock"
+const cliSocketPath = "/run/d8rctl/d8rctl.sock"
 
 // CLIServer CLI 专用服务器（通过 Unix Domain Socket）
 type CLIServer struct {

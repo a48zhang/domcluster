@@ -13,18 +13,10 @@ import (
 var pidFile string
 
 func init() {
-	// 优先使用 /var/run/domclusterd/
+	// 强制使用 /var/run/domclusterd/，确保所有用户访问同一个实例
 	pidDir := "/var/run/domclusterd"
 	if err := os.MkdirAll(pidDir, 0755); err != nil {
-		// 如果没有权限，使用 ~/.local/run/domclusterd/
-		homeDir, err := os.UserHomeDir()
-		if err == nil {
-			pidDir = filepath.Join(homeDir, ".local", "run", "domclusterd")
-			os.MkdirAll(pidDir, 0755)
-		} else {
-			// 如果都失败，使用当前目录
-			pidDir = "."
-		}
+		panic(fmt.Sprintf("Failed to create PID directory %s: %v. Please run as root.", pidDir, err))
 	}
 	pidFile = filepath.Join(pidDir, "domclusterd.pid")
 }
