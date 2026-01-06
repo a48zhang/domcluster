@@ -66,7 +66,7 @@ func readLastLines(file *os.File, lines int) ([]string, error) {
 	var lineCount int
 	var offset int64 = fileSize
 
-	for offset > 0 && lineCount <= lines {
+	for offset > 0 {
 		chunkSize := bufferSize
 		if offset < int64(chunkSize) {
 			chunkSize = int(offset)
@@ -85,29 +85,22 @@ func readLastLines(file *os.File, lines int) ([]string, error) {
 		}
 
 		// 从后向前统计换行符
-		foundEnoughLines := false
 		for i := chunkSize - 1; i >= 0; i-- {
 			if chunk[i] == '\n' {
 				lineCount++
 				if lineCount > lines {
-					// 找到足够的换行符，只保留当前 chunk 中从第 lines+1 个换行符之后的部分
-					// 此时不需要之前读取的 chunk 数据，因为我们已经找到了足够的换行符
-					buf = chunk[i+1:]
-					foundEnoughLines = true
-					break
+					// 找到足够的换行符，保留从当前位置开始的所有内容
+					buf = append(chunk[i+1:], buf...)
+					return extractLastLines(string(buf), lines), nil
 				}
 			}
 		}
 
-		// 如果还没有找到足够的换行符，继续向前读取
-		if !foundEnoughLines {
-			buf = append(chunk, buf...)
-		} else {
-			// 已经找到足够的换行符，停止读取更多数据
-			break
-		}
+		// 将当前chunk添加到缓冲区前面
+		buf = append(chunk, buf...)
 	}
 
+	// 已经到达文件开头，返回所有内容
 	return extractLastLines(string(buf), lines), nil
 }
 

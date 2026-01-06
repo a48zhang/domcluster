@@ -75,7 +75,7 @@ func (d *Daemon) Run(ctx context.Context, nodeID, nodeName string) error {
 
 	// 创建并启动状态报告器（定时上报）
 	reporter := monitor.NewStatusReporter(m, d.manager)
-	go reporter.Start(30 * time.Second)
+	go reporter.Start(5 * time.Second)
 	defer reporter.Stop()
 
 	// 创建并注册查询处理器

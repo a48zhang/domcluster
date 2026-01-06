@@ -61,11 +61,8 @@ func (m *Manager) Connect() error {
 	m.client = client
 	rpcClient := pb.NewDomclusterServiceClient(client.GetConn())
 
-	// 建立流式连接
-	connectCtx, cancel := context.WithTimeout(context.Background(), m.connectTimeout)
-	defer cancel()
-
-	stream, err := rpcClient.Publish(connectCtx)
+	// 建立流式连接，使用管理器的上下文
+	stream, err := rpcClient.Publish(m.ctx)
 	if err != nil {
 		return fmt.Errorf("failed to create stream: %w", err)
 	}
@@ -90,7 +87,14 @@ func (m *Manager) RegisterNode(nodeID, name string) error {
 	}
 	dataBytes, _ := json.Marshal(data)
 
-	return m.Send("register", nodeID, dataBytes)
+	if err := m.Send("register", nodeID, dataBytes); err != nil {
+		return err
+	}
+
+	// 等待服务器处理注册请求并发送响应
+	time.Sleep(500 * time.Millisecond)
+
+	return nil
 }
 
 // SendHeartbeat 发送心跳
@@ -156,12 +160,27 @@ func (m *Manager) receiveLoop() {
 		default:
 		}
 
-		resp, err := m.stream.Recv()
+		// 检查流是否可用
+		m.mu.RLock()
+		stream := m.stream
+		m.mu.RUnlock()
+
+		if stream == nil {
+			// 流不可用，等待一段时间后重试
+			time.Sleep(1 * time.Second)
+			continue
+		}
+
+		resp, err := stream.Recv()
 		if err != nil {
-			zap.L().Error("Receive error, attempting to reconnect", zap.Error(err))
+			zap.L().Error("Receive error", zap.Error(err))
 			m.mu.Lock()
 			m.connected = false
 			m.mu.Unlock()
+
+			// 等待后重连
+			time.Sleep(10 * time.Second)
+
 			if err := m.reconnect(); err != nil {
 				zap.L().Sugar().Errorf("Failed to reconnect: %v", err)
 			}
