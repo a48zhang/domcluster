@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"d8rctl/config"
 	"fmt"
 	"os"
 	"os/exec"
@@ -22,12 +23,17 @@ func Start() error {
 	defer logger.Sync()
 	zap.ReplaceGlobals(logger)
 
+	// 确保目录存在
+	if err := config.EnsureDirs(); err != nil {
+		return fmt.Errorf("failed to create directories: %w", err)
+	}
+
 	executable, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("failed to get executable: %w", err)
 	}
 
-	logFile, err := os.OpenFile("d8rctl.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	logFile, err := os.OpenFile(config.GetLogFile(), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
 		return fmt.Errorf("failed to open log file: %w", err)
 	}

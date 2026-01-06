@@ -3,13 +3,31 @@ package daemon
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"syscall"
 
 	"go.uber.org/zap"
 )
 
-const pidFile = "domclusterd.pid"
+var pidFile string
+
+func init() {
+	// 优先使用 /var/run/domclusterd/
+	pidDir := "/var/run/domclusterd"
+	if err := os.MkdirAll(pidDir, 0755); err != nil {
+		// 如果没有权限，使用 ~/.local/run/domclusterd/
+		homeDir, err := os.UserHomeDir()
+		if err == nil {
+			pidDir = filepath.Join(homeDir, ".local", "run", "domclusterd")
+			os.MkdirAll(pidDir, 0755)
+		} else {
+			// 如果都失败，使用当前目录
+			pidDir = "."
+		}
+	}
+	pidFile = filepath.Join(pidDir, "domclusterd.pid")
+}
 
 // WritePID 写入 PID 文件
 func WritePID(pid int) error {

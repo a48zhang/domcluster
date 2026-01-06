@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"d8rctl/config"
 	"fmt"
 	"os"
 	"strconv"
@@ -10,19 +11,23 @@ import (
 )
 
 const (
-	PIDFile        = "d8rctl.pid"
 	FilePermission = 0644 // 文件权限：所有者读写，组和其他用户只读
 )
+
+// getPIDFile 获取PID文件路径
+func getPIDFile() string {
+	return config.GetPIDFile()
+}
 
 // WritePID 写入 PID 文件
 func WritePID(pid int) error {
 	data := []byte(strconv.Itoa(pid))
-	return os.WriteFile(PIDFile, data, FilePermission)
+	return os.WriteFile(getPIDFile(), data, FilePermission)
 }
 
 // ReadPID 读取 PID 文件
 func ReadPID() (int, error) {
-	data, err := os.ReadFile(PIDFile)
+	data, err := os.ReadFile(getPIDFile())
 	if err != nil {
 		return 0, err
 	}
@@ -31,7 +36,7 @@ func ReadPID() (int, error) {
 
 // RemovePID 删除 PID 文件
 func RemovePID() error {
-	return os.Remove(PIDFile)
+	return os.Remove(getPIDFile())
 }
 
 // IsRunning 检查进程是否在运行

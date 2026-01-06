@@ -6,13 +6,36 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 )
 
-const logFile = "domclusterd.log"
 const bufferSize = 4096
+
+// getLogFile 获取日志文件路径
+func getLogFile() string {
+	// 优先使用 /var/log/domclusterd/
+	logDir := "/var/log/domclusterd"
+	if _, err := os.Stat(logDir); err == nil {
+		return filepath.Join(logDir, "domclusterd.log")
+	}
+
+	// 如果不存在或没有权限，使用 ~/.local/log/domclusterd/
+	homeDir, err := os.UserHomeDir()
+	if err == nil {
+		logDir = filepath.Join(homeDir, ".local", "log", "domclusterd")
+		if _, err := os.Stat(logDir); err == nil {
+			return filepath.Join(logDir, "domclusterd.log")
+		}
+	}
+
+	// 如果都失败，使用当前目录
+	return "domclusterd.log"
+}
 
 // Logs 查看日志
 func Logs(lines int) error {
+	logFile := getLogFile()
+
 	if _, err := os.Stat(logFile); os.IsNotExist(err) {
 		return fmt.Errorf("log file not found")
 	}

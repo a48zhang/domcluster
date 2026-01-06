@@ -2,16 +2,22 @@ package cli
 
 import (
 	"bytes"
+	"d8rctl/config"
 	"fmt"
 	"io"
 	"os"
 )
 
-const logFile = "d8rctl.log"
 const bufferSize = 4096
+
+// getLogFile 获取日志文件路径
+func getLogFile() string {
+	return config.GetLogFile()
+}
 
 // Logs 查看日志
 func Logs(lines int) error {
+	logFile := getLogFile()
 	if _, err := os.Stat(logFile); os.IsNotExist(err) {
 		return fmt.Errorf("log file not found")
 	}

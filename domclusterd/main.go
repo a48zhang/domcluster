@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"domclusterd/cli"
 	"domclusterd/daemon"
@@ -78,18 +79,33 @@ func main() {
 }
 
 func runDaemon(nodeID, nodeName string) {
+	// 确定日志文件目录
+	logDir := "/var/log/domclusterd"
+	if err := os.MkdirAll(logDir, 0755); err != nil {
+		// 如果没有权限，使用 ~/.local/log/domclusterd/
+		homeDir, err := os.UserHomeDir()
+		if err == nil {
+			logDir = filepath.Join(homeDir, ".local", "log", "domclusterd")
+			os.MkdirAll(logDir, 0755)
+		} else {
+			// 如果都失败，使用当前目录
+			logDir = "."
+		}
+	}
+	logFile := filepath.Join(logDir, "domclusterd.log")
+
 	// 初始化 zap logger（输出到文件）
-	logFile, err := os.OpenFile("domclusterd.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	file, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
 		panic(err)
 	}
-	defer logFile.Close()
+	defer file.Close()
 
 	encoderCfg := zap.NewProductionEncoderConfig()
 	encoderCfg.EncodeTime = zapcore.ISO8601TimeEncoder
 	core := zapcore.NewCore(
 		zapcore.NewJSONEncoder(encoderCfg),
-		zapcore.AddSync(logFile),
+		zapcore.AddSync(file),
 		zapcore.InfoLevel,
 	)
 

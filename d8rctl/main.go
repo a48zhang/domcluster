@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"d8rctl/cli"
+	"d8rctl/config"
 	"d8rctl/daemon"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -64,7 +65,13 @@ func main() {
 }
 
 func runDaemon() {
-	logFile, err := os.OpenFile("d8rctl.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, daemon.FilePermission)
+	// 确保目录存在
+	if err := config.EnsureDirs(); err != nil {
+		fmt.Printf("Failed to create directories: %v\n", err)
+		os.Exit(1)
+	}
+
+	logFile, err := os.OpenFile(config.GetLogFile(), os.O_CREATE|os.O_WRONLY|os.O_APPEND, daemon.FilePermission)
 	if err != nil {
 		fmt.Printf("Failed to open log file: %v\n", err)
 		os.Exit(1)

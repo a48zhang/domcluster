@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"d8rctl/config"
 	"fmt"
 	"os"
 	"os/exec"
@@ -69,6 +70,10 @@ func (d *Daemon) Run(ctx context.Context) error {
 
 	zap.L().Sugar().Infof("Daemon started with PID: %d", os.Getpid())
 
+	// 创建可取消的context
+	cancelCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	go func() {
 		if err := d.httpServer.Start(); err != nil {
 			zap.L().Sugar().Error("HTTP server error", zap.Error(err))
@@ -82,25 +87,25 @@ func (d *Daemon) Run(ctx context.Context) error {
 			select {
 			case <-ticker.C:
 				d.status.Uptime = time.Since(d.startTime).String()
-			case <-ctx.Done():
+			case <-cancelCtx.Done():
 				return
 			}
 		}
 	}()
 
 	zap.L().Sugar().Info("Starting gRPC server...")
-	
+
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGTERM, syscall.SIGINT)
-	
+
 	go func() {
 		sig := <-sigChan
 		zap.L().Sugar().Infof("Received signal: %v, shutting down...", sig)
+		cancel()
 		d.Stop()
-		os.Exit(0)
 	}()
-	
-	if err := d.server.Start(ctx); err != nil {
+
+	if err := d.server.Start(cancelCtx); err != nil {
 		return fmt.Errorf("gRPC server error: %w", err)
 	}
 
@@ -143,7 +148,7 @@ func Restart() error {
 		time.Sleep(checkInterval)
 	}
 
-	logFile, err := os.OpenFile("d8rctl.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	logFile, err := os.OpenFile(config.GetLogFile(), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
 		return fmt.Errorf("failed to open log file: %w", err)
 	}
