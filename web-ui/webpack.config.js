@@ -40,11 +40,12 @@ module.exports = {
       directory: path.join(__dirname, 'public'),
     },
     port: 3000,
-    proxy: {
-      '/api': {
+    proxy: [
+      {
+        context: ['/api'],
         target: 'http://127.0.0.1:18080',
         changeOrigin: true,
-      },
-    },
+      }
+    ],
   },
 };
