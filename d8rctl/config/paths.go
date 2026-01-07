@@ -7,32 +7,13 @@ import (
 
 // GetPIDDir 获取PID文件目录
 func GetPIDDir() string {
-	// 使用全局位置 /run/d8rctl，确保所有用户都能访问同一个守护进程实例
-	pidDir := "/run/d8rctl"
-	if err := os.MkdirAll(pidDir, 0755); err == nil {
-		return pidDir
-	}
-
-	// 回退到 /var/run/d8rctl
-	pidDir = "/var/run/d8rctl"
-	if err := os.MkdirAll(pidDir, 0755); err == nil {
-		return pidDir
-	}
-
-	// 最后回退到 /tmp
-	return "/tmp"
+	return "/run/d8rctl"
+	
 }
 
 // GetLogDir 获取日志文件目录
 func GetLogDir() string {
-	// 使用全局位置 /var/log/d8rctl，确保所有用户都能访问同一个日志文件
-	logDir := "/var/log/d8rctl"
-	if err := os.MkdirAll(logDir, 0755); err == nil {
-		return logDir
-	}
-
-	// 回退到 /tmp
-	return "/tmp"
+	return "/var/log/d8rctl" 
 }
 
 // GetPIDFile 获取PID文件路径

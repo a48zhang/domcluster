@@ -22,6 +22,8 @@ type Manager struct {
 	ctx               context.Context
 	cancel            context.CancelFunc
 	stream            pb.DomclusterService_PublishClient
+	streamCtx         context.Context
+	streamCancel      context.CancelFunc
 	nodeID            string
 	nodeName          string
 	mu                sync.RWMutex
@@ -54,6 +56,11 @@ func (m *Manager) Connect() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	// 关闭旧的流和上下文
+	if m.streamCancel != nil {
+		m.streamCancel()
+	}
+
 	client, err := NewClient(m.config)
 	if err != nil {
 		return err
@@ -61,13 +68,18 @@ func (m *Manager) Connect() error {
 	m.client = client
 	rpcClient := pb.NewDomclusterServiceClient(client.GetConn())
 
-	// 建立流式连接，使用管理器的上下文
-	stream, err := rpcClient.Publish(m.ctx)
+	// 为每个流创建独立的新上下文
+	streamCtx, streamCancel := context.WithCancel(m.ctx)
+	stream, err := rpcClient.Publish(streamCtx)
 	if err != nil {
+		streamCancel()
 		return fmt.Errorf("failed to create stream: %w", err)
 	}
+
 	m.rpcClient = rpcClient
 	m.stream = stream
+	m.streamCtx = streamCtx
+	m.streamCancel = streamCancel
 	m.connected = true
 	m.lastHeartbeat = time.Now()
 
@@ -310,6 +322,14 @@ func (m *Manager) UnregisterHandler(cmd string) {
 
 // Close 关闭连接
 func (m *Manager) Close() {
+	m.mu.Lock()
+	// 取消流上下文
+	if m.streamCancel != nil {
+		m.streamCancel()
+		m.streamCancel = nil
+	}
+	m.mu.Unlock()
+
 	m.cancel()
 	if m.client != nil {
 		m.client.Close()

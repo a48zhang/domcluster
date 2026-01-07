@@ -59,7 +59,6 @@ func NewServer(config *Config) (*Server, error) {
 
 	opts = append(opts, grpc.KeepaliveParams(keepalive.ServerParameters{
 		MaxConnectionIdle: 5 * time.Minute, // 连接空闲5分钟后关闭
-		MaxConnectionAge:  0,               // 0 表示无限制
 		Time:              10 * time.Second, // 每10秒发送一次保活探测
 		Timeout:           1 * time.Second,  // 保活探测超时时间
 	}))
