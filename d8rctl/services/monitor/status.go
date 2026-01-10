@@ -13,6 +13,7 @@ type HostInfo struct {
 
 // CPUInfo CPU信息
 type CPUInfo struct {
+	CoreCount    int     `json:"core_count"`
 	UsagePercent float64 `json:"usage_percent"`
 }
 
@@ -33,11 +34,18 @@ type DiskInfo struct {
 	UsagePercent float64 `json:"usage_percent"`
 }
 
+// NetworkInfo 网络信息
+type NetworkInfo struct {
+	RxBytes uint64 `json:"rx_bytes"`
+	TxBytes uint64 `json:"tx_bytes"`
+}
+
 // SystemResources 系统资源信息
 type SystemResources struct {
-	CPU    *CPUInfo    `json:"cpu"`
-	Memory *MemoryInfo `json:"memory"`
-	Disk   *DiskInfo   `json:"disk"`
+	CPU     *CPUInfo     `json:"cpu"`
+	Memory  *MemoryInfo  `json:"memory"`
+	Disk    *DiskInfo    `json:"disk"`
+	Network *NetworkInfo `json:"network"`
 }
 
 // DockerContainer Docker容器信息

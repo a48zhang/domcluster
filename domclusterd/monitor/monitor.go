@@ -24,6 +24,7 @@ type HostInfo struct {
 
 // CPUInfo CPU信息
 type CPUInfo struct {
+	CoreCount    int     `json:"core_count"`
 	UsagePercent float64 `json:"usage_percent"`
 }
 
@@ -44,11 +45,18 @@ type DiskInfo struct {
 	UsagePercent float64 `json:"usage_percent"`
 }
 
+// NetworkInfo 网络信息
+type NetworkInfo struct {
+	RxBytes uint64 `json:"rx_bytes"`
+	TxBytes uint64 `json:"tx_bytes"`
+}
+
 // SystemResources 系统资源信息
 type SystemResources struct {
-	CPU    *CPUInfo    `json:"cpu"`
-	Memory *MemoryInfo `json:"memory"`
-	Disk   *DiskInfo   `json:"disk"`
+	CPU     *CPUInfo     `json:"cpu"`
+	Memory  *MemoryInfo  `json:"memory"`
+	Disk    *DiskInfo    `json:"disk"`
+	Network *NetworkInfo `json:"network"`
 }
 
 // DockerContainer Docker容器信息
@@ -116,10 +124,16 @@ func (m *Monitor) GetSystemResources() (*SystemResources, error) {
 		zap.L().Warn("failed to get disk info", zap.Error(err))
 	}
 
+	networkInfo, err := m.getNetworkInfo()
+	if err != nil {
+		zap.L().Warn("failed to get network info", zap.Error(err))
+	}
+
 	return &SystemResources{
-		CPU:    cpuInfo,
-		Memory: memInfo,
-		Disk:   diskInfo,
+		CPU:     cpuInfo,
+		Memory:  memInfo,
+		Disk:    diskInfo,
+		Network: networkInfo,
 	}, nil
 }
 
@@ -155,10 +169,16 @@ func (m *Monitor) getCPUInfo() (*CPUInfo, error) {
 	var usage float64
 	_, err = fmt.Sscanf(strings.TrimSpace(string(output)), "%f", &usage)
 	if err != nil {
-		return &CPUInfo{UsagePercent: 0}, nil
+		return &CPUInfo{
+			CoreCount:    runtime.NumCPU(),
+			UsagePercent: 0,
+		}, nil
 	}
 
-	return &CPUInfo{UsagePercent: usage}, nil
+	return &CPUInfo{
+		CoreCount:    runtime.NumCPU(),
+		UsagePercent: usage,
+	}, nil
 }
 
 // getMemoryInfo 获取内存信息
@@ -225,6 +245,27 @@ func (m *Monitor) getDiskInfo(path string) (*DiskInfo, error) {
 		Used:         used,
 		Free:         free,
 		UsagePercent: usagePercent,
+	}, nil
+}
+
+// getNetworkInfo 获取网络信息
+func (m *Monitor) getNetworkInfo() (*NetworkInfo, error) {
+	// 读取 /proc/net/dev 获取网络流量统计
+	cmd := exec.Command("sh", "-c", "cat /proc/net/dev | tail -n +3 | awk '{rx+=$2; tx+=$10} END {print rx, tx}'")
+	output, err := cmd.Output()
+	if err != nil {
+		return &NetworkInfo{}, nil
+	}
+
+	var rxBytes, txBytes uint64
+	_, err = fmt.Sscanf(strings.TrimSpace(string(output)), "%d %d", &rxBytes, &txBytes)
+	if err != nil {
+		return &NetworkInfo{}, nil
+	}
+
+	return &NetworkInfo{
+		RxBytes: rxBytes,
+		TxBytes: txBytes,
 	}, nil
 }
 
@@ -309,9 +350,12 @@ func (m *Monitor) GetMonitorReport() (map[string]interface{}, error) {
 	if err != nil {
 		zap.L().Warn("failed to get system resources", zap.Error(err))
 		systemResources = &SystemResources{
-			CPU:    &CPUInfo{},
-			Memory: &MemoryInfo{},
-			Disk:   &DiskInfo{},
+			CPU: &CPUInfo{
+				CoreCount: runtime.NumCPU(),
+			},
+			Memory:  &MemoryInfo{},
+			Disk:    &DiskInfo{},
+			Network: &NetworkInfo{},
 		}
 	}
 
