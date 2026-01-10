@@ -131,10 +131,50 @@
   margin-top: 30px;
 }
 
+.nodes-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
 .nodes-card h2 {
   color: #333;
-  margin-bottom: 20px;
+  margin: 0;
   font-size: 20px;
+}
+
+.btn-add-host {
+  background: #28a745;
+  color: white;
+  padding: 10px 20px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: background 0.2s;
+}
+
+.btn-add-host:hover {
+  background: #218838;
+}
+
+.btn-primary {
+  background: #007bff;
+  color: white;
+  padding: 10px 24px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: background 0.2s;
+  margin-top: 12px;
+}
+
+.btn-primary:hover {
+  background: #0056b3;
 }
 
 .empty-state {
@@ -144,7 +184,7 @@
 }
 
 .empty-state p {
-  margin: 0;
+  margin: 0 0 12px 0;
   font-size: 16px;
 }
 
