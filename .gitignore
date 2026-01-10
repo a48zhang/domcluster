@@ -1,7 +1,8 @@
 *.exe
 config.yaml
 */node_modules/
-*/dist/
+*/dist
 *.log
 .DS_Store
 built/
+IFLOW.md
