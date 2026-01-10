@@ -5,8 +5,9 @@ module.exports = {
   entry: './src/index.js',
   output: {
     path: path.resolve(__dirname, 'dist'),
-    filename: 'js/[name].[contenthash:8].js',
-    assetModuleFilename: 'assets/[name].[contenthash:8][ext]',
+    filename: '[name].[contenthash:8].js',
+    assetModuleFilename: '[name].[contenthash:8][ext]',
+    publicPath: '/',
     clean: true,
   },
   module: {
