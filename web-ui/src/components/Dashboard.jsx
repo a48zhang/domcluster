@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import apiClient from '../api/client';
 import Modal from './Modal';
 import Toast from './Toast';
 import './Dashboard.css';
@@ -38,14 +39,13 @@ const Dashboard = ({ onLogout }) => {
 
   const loadStatus = async () => {
     try {
-      const response = await fetch('/api/status');
-      if (response.status === 401) {
+      const data = await apiClient.getStatus();
+      setStatus(data);
+    } catch (error) {
+      if (error.message === 'UNAUTHORIZED') {
         onLogout();
         return;
       }
-      const data = await response.json();
-      setStatus(data);
-    } catch (error) {
       console.error('Failed to load status:', error);
       setToast({ message: '加载状态失败', type: 'error' });
     } finally {
@@ -55,12 +55,7 @@ const Dashboard = ({ onLogout }) => {
 
   const loadNodes = async () => {
     try {
-      const response = await fetch('/api/nodes');
-      if (response.status === 401) {
-        onLogout();
-        return;
-      }
-      const data = await response.json();
+      const data = await apiClient.getNodes();
       setNodes(data);
 
       // 加载每个节点的状态
@@ -69,11 +64,8 @@ const Dashboard = ({ onLogout }) => {
       await Promise.all(
         nodeIds.map(async (nodeId) => {
           try {
-            const statusResponse = await fetch(`/api/nodes/${nodeId}/status`);
-            if (statusResponse.ok) {
-              const statusData = await statusResponse.json();
-              statuses[nodeId] = statusData;
-            }
+            const statusData = await apiClient.getNodeStatus(nodeId);
+            statuses[nodeId] = statusData;
           } catch (error) {
             console.error(`Failed to load status for node ${nodeId}:`, error);
           }
@@ -81,6 +73,10 @@ const Dashboard = ({ onLogout }) => {
       );
       setNodeStatuses(statuses);
     } catch (error) {
+      if (error.message === 'UNAUTHORIZED') {
+        onLogout();
+        return;
+      }
       console.error('Failed to load nodes:', error);
       setToast({ message: '加载节点列表失败', type: 'error' });
     } finally {
@@ -103,8 +99,7 @@ const Dashboard = ({ onLogout }) => {
     setModal({ isOpen: false, action: null, title: '' });
 
     try {
-      const response = await fetch('/api/stop', { method: 'POST' });
-      const data = await response.json();
+      const data = await apiClient.stop();
 
       if (data.status === 'ok') {
         setToast({ message: '服务已停止', type: 'success' });
@@ -121,8 +116,7 @@ const Dashboard = ({ onLogout }) => {
     setModal({ isOpen: false, action: null, title: '' });
 
     try {
-      const response = await fetch('/api/restart', { method: 'POST' });
-      const data = await response.json();
+      const data = await apiClient.restart();
 
       if (data.status === 'ok') {
         setToast({ message: '服务正在重启', type: 'warning' });
@@ -145,7 +139,7 @@ const Dashboard = ({ onLogout }) => {
 
   const handleLogout = async () => {
     try {
-      await fetch('/api/logout', { method: 'POST' });
+      await apiClient.logout();
       onLogout();
     } catch (error) {
       console.error('Logout failed:', error);

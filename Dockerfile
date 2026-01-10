@@ -8,7 +8,7 @@ RUN mkdir -p built && \
 
 FROM node:latest AS builder-web
 WORKDIR /app
-COPY --from=builder-ctl /app/web-ui .
+COPY ./web-ui .
 COPY --from=builder-ctl /app/built ./built
 RUN npm install && npm run build
 
@@ -16,6 +16,6 @@ FROM alpine:latest
 WORKDIR /var/www/html
 COPY --from=builder-web /app/built ./bin
 COPY --from=builder-web /app/dist/* .
-RUN chmod +x ./bin/docker-entry.sh && apk add --no-cache lighttpd
-EXPOSE 80
+RUN chmod +x ./bin/docker-entry.sh && apk add --no-cache lighttpd && apk add --no-cache libc6-compat gcompat
+EXPOSE 80 50051 18080
 CMD ["./bin/docker-entry.sh"]

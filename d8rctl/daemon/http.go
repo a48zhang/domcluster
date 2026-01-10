@@ -10,6 +10,7 @@ import (
 
 	"d8rctl/auth"
 	"d8rctl/services"
+
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 )
@@ -18,11 +19,11 @@ const httpAddr = "127.0.0.1:18080"
 
 // ServerStatus 服务器状态
 type ServerStatus struct {
-	Running  bool   `json:"running"`
-	PID      int    `json:"pid"`
-	Uptime   string `json:"uptime"`
-	Nodes    int    `json:"nodes"`
-	Message  string `json:"message"`
+	Running bool   `json:"running"`
+	PID     int    `json:"pid"`
+	Uptime  string `json:"uptime"`
+	Nodes   int    `json:"nodes"`
+	Message string `json:"message"`
 }
 
 // HTTPServer HTTP 服务器
@@ -43,6 +44,21 @@ func NewHTTPServer(status *ServerStatus, svc interface{}) *HTTPServer {
 
 	router := gin.Default()
 
+	// 添加 CORS 中间件
+	router.Use(func(c *gin.Context) {
+		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, accept, origin, Cache-Control, X-Requested-With")
+		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS, GET, PUT, DELETE")
+
+		if c.Request.Method == "OPTIONS" {
+			c.AbortWithStatus(204)
+			return
+		}
+
+		c.Next()
+	})
+
 	api := router.Group("/api")
 	{
 		// Web UI 端点 - 需要认证
@@ -50,22 +66,23 @@ func NewHTTPServer(status *ServerStatus, svc interface{}) *HTTPServer {
 		api.POST("/logout", auth.GinAuthMiddleware(), hs.handleLogout)
 
 		authRequired := api.Group("")
-			authRequired.Use(auth.GinAuthMiddleware())
-				{
-					authRequired.GET("/status", hs.handleStatus)
-					authRequired.POST("/stop", hs.handleStop)
-					authRequired.POST("/restart", hs.handleRestart)
-					authRequired.GET("/nodes", hs.handleNodes)
-					authRequired.GET("/nodes/:nodeId/status", hs.handleNodeStatus)
-					authRequired.GET("/docker/containers", hs.handleDockerList)
-					authRequired.POST("/docker/start", hs.handleDockerStart)
-					authRequired.POST("/docker/stop", hs.handleDockerStop)
-					authRequired.POST("/docker/restart", hs.handleDockerRestart)
-					authRequired.GET("/docker/logs", hs.handleDockerLogs)
-					authRequired.GET("/docker/stats", hs.handleDockerStats)
-					authRequired.GET("/docker/inspect", hs.handleDockerInspect)
-					authRequired.GET("/docker/nodes", hs.handleDockerNodes)
-				}	}
+		authRequired.Use(auth.GinAuthMiddleware())
+		{
+			authRequired.GET("/status", hs.handleStatus)
+			authRequired.POST("/stop", hs.handleStop)
+			authRequired.POST("/restart", hs.handleRestart)
+			authRequired.GET("/nodes", hs.handleNodes)
+			authRequired.GET("/nodes/:nodeId/status", hs.handleNodeStatus)
+			authRequired.GET("/docker/containers", hs.handleDockerList)
+			authRequired.POST("/docker/start", hs.handleDockerStart)
+			authRequired.POST("/docker/stop", hs.handleDockerStop)
+			authRequired.POST("/docker/restart", hs.handleDockerRestart)
+			authRequired.GET("/docker/logs", hs.handleDockerLogs)
+			authRequired.GET("/docker/stats", hs.handleDockerStats)
+			authRequired.GET("/docker/inspect", hs.handleDockerInspect)
+			authRequired.GET("/docker/nodes", hs.handleDockerNodes)
+		}
+	}
 
 	router.NoRoute(func(c *gin.Context) {
 		c.File("../web-ui/dist" + c.Request.URL.Path)

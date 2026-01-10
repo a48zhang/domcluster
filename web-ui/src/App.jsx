@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import apiClient from './api/client';
 import Login from './components/Login';
 import Dashboard from './components/Dashboard';
 
@@ -11,10 +12,8 @@ function App() {
 
   const checkAuth = async () => {
     try {
-      const response = await fetch('/api/status');
-      if (response.ok) {
-        setIsAuthenticated(true);
-      }
+      await apiClient.getStatus();
+      setIsAuthenticated(true);
     } catch (error) {
       console.error('Auth check failed:', error);
     }

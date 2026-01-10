@@ -5,7 +5,8 @@ module.exports = {
   entry: './src/index.js',
   output: {
     path: path.resolve(__dirname, 'dist'),
-    filename: 'bundle.js',
+    filename: 'js/[name].[contenthash:8].js',
+    assetModuleFilename: 'assets/[name].[contenthash:8][ext]',
     clean: true,
   },
   module: {
