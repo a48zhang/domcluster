@@ -75,6 +75,11 @@ func main() {
 			fmt.Printf("Unknown pod command: %s\n", podCommand)
 			os.Exit(1)
 		}
+	case "host":
+		if err := cli.Host(os.Args[2:]); err != nil {
+			fmt.Printf("Error: %v\n", err)
+			os.Exit(1)
+		}
 	default:
 		fmt.Printf("Unknown command: %s\n", command)
 		printUsage()
@@ -133,4 +138,8 @@ func printUsage() {
 	fmt.Println("  restart          Restart daemon")
 	fmt.Println("  password [reset] Show password info or reset password")
 	fmt.Println("  pod list         List all connected domclusterd nodes")
+	fmt.Println("  host             Manage controlled hosts")
+	fmt.Println("    add <user@host[:port]>   Add a new host")
+	fmt.Println("    list                     List all hosts")
+	fmt.Println("    remove <node_id>         Remove a host")
 }
