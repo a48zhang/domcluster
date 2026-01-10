@@ -30,6 +30,8 @@ class ApiClient {
         const url = this.buildUrl(path);
         const response = await fetch(url, {
             ...options,
+            // 确保自动携带Cookie
+            credentials: 'include',
             headers: {
                 'Content-Type': 'application/json',
                 ...options.headers,
