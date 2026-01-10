@@ -1,0 +1,303 @@
+.host-details {
+  min-height: 100vh;
+  background: #f5f7fa;
+}
+
+.host-details-header {
+  background: white;
+  padding: 20px 40px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+.host-details-header h1 {
+  color: #333;
+  font-size: 24px;
+  margin: 0;
+}
+
+.status-badge {
+  padding: 5px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.status-badge.online {
+  background: #d4edda;
+  color: #155724;
+}
+
+.status-badge.offline {
+  background: #f8d7da;
+  color: #721c24;
+}
+
+.host-details-main {
+  max-width: 1400px;
+  margin: 40px auto;
+  padding: 0 20px;
+}
+
+.detail-card {
+  background: white;
+  border-radius: 12px;
+  padding: 30px;
+  margin-bottom: 20px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.detail-card h2 {
+  color: #333;
+  margin-bottom: 20px;
+  font-size: 20px;
+}
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.card-header h2 {
+  margin: 0;
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 20px;
+}
+
+.detail-item {
+  padding: 15px;
+  background: #f8f9fa;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.detail-label {
+  color: #666;
+  font-size: 14px;
+}
+
+.detail-value {
+  color: #333;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.resource-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 20px;
+}
+
+.resource-item {
+  padding: 20px;
+  background: #f8f9fa;
+  border-radius: 8px;
+}
+
+.resource-item h3 {
+  margin: 0 0 15px 0;
+  color: #333;
+  font-size: 16px;
+}
+
+.resource-details p {
+  margin: 8px 0;
+  color: #555;
+  font-size: 14px;
+}
+
+.chart-card {
+  overflow: visible;
+}
+
+.chart-card .recharts-wrapper {
+  margin: 0 auto;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  color: #555;
+}
+
+.checkbox-label input[type="checkbox"] {
+  cursor: pointer;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 40px;
+  color: #999;
+}
+
+.containers-table {
+  overflow-x: auto;
+}
+
+.containers-table table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.containers-table th {
+  background: #f8f9fa;
+  padding: 12px;
+  text-align: left;
+  font-size: 14px;
+  font-weight: 600;
+  color: #555;
+  border-bottom: 2px solid #dee2e6;
+}
+
+.containers-table td {
+  padding: 12px;
+  border-bottom: 1px solid #dee2e6;
+  font-size: 14px;
+  color: #333;
+}
+
+.container-status {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.container-status.running {
+  background: #d4edda;
+  color: #155724;
+}
+
+.container-status.exited,
+.container-status.stopped {
+  background: #f8d7da;
+  color: #721c24;
+}
+
+.container-status.paused {
+  background: #fff3cd;
+  color: #856404;
+}
+
+.container-status.created {
+  background: #d1ecf1;
+  color: #0c5460;
+}
+
+.container-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.btn-small {
+  padding: 6px 12px;
+  border: none;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.3s;
+  font-weight: 500;
+}
+
+.btn-small.btn-start {
+  background: #28a745;
+  color: white;
+}
+
+.btn-small.btn-start:hover {
+  background: #218838;
+}
+
+.btn-small.btn-stop {
+  background: #dc3545;
+  color: white;
+}
+
+.btn-small.btn-stop:hover {
+  background: #c82333;
+}
+
+.btn-small.btn-restart {
+  background: #ffc107;
+  color: #333;
+}
+
+.btn-small.btn-restart:hover {
+  background: #e0a800;
+}
+
+.terminal-container {
+  margin-top: 20px;
+  background: #1e1e1e;
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.terminal {
+  height: 400px;
+}
+
+.btn {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.3s;
+  font-weight: 500;
+}
+
+.btn-back {
+  background: #6c757d;
+  color: white;
+}
+
+.btn-back:hover {
+  background: #5a6268;
+}
+
+.btn-logout {
+  background: #667eea;
+  color: white;
+}
+
+.btn-logout:hover {
+  background: #5568d3;
+}
+
+.btn-toggle {
+  background: #007bff;
+  color: white;
+}
+
+.btn-toggle:hover {
+  background: #0056b3;
+}
+
+.loading {
+  text-align: center;
+  padding: 100px 40px;
+  font-size: 18px;
+  color: #999;
+}

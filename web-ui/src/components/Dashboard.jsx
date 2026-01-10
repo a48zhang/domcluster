@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import apiClient from '../api/client';
 import Modal from './Modal';
 import Toast from './Toast';
 import './Dashboard.css';
 
 const Dashboard = ({ onLogout }) => {
+  const navigate = useNavigate();
   // 辅助函数：根据使用率获取颜色
   const getResourceColor = (usage) => {
     if (usage < 50) return '#28a745';
@@ -214,7 +216,11 @@ const Dashboard = ({ onLogout }) => {
               {Object.entries(nodes).map(([nodeId, nodeInfo]) => {
                 const nodeStatus = nodeStatuses[nodeId];
                 return (
-                  <div key={nodeId} className="node-card">
+                  <div 
+                    key={nodeId} 
+                    className="node-card clickable"
+                    onClick={() => navigate(`/host/${nodeId}`)}
+                  >
                     <div className="node-header">
                       <h3 className="node-name">{nodeInfo.name}</h3>
                       <span className="node-id">{nodeId}</span>
