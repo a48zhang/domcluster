@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import apiClient from '../api/client';
 import Modal from './Modal';
 import Toast from './Toast';
+import AddHostModal from './AddHostModal';
 import './Dashboard.css';
 
 const Dashboard = ({ onLogout }) => {
@@ -36,6 +37,7 @@ const Dashboard = ({ onLogout }) => {
   const [nodesLoading, setNodesLoading] = useState(true);
   const [modal, setModal] = useState({ isOpen: false, action: null, title: '' });
   const [toast, setToast] = useState(null);
+  const [addHostModalOpen, setAddHostModalOpen] = useState(false);
 
   const loadStatus = async () => {
     try {
@@ -147,6 +149,33 @@ const Dashboard = ({ onLogout }) => {
     }
   };
 
+  const handleAddHost = async (formData) => {
+    try {
+      const result = await apiClient.addHost(
+        formData.sshConnection,
+        formData.authType === 'password' ? formData.password : '',
+        formData.authType === 'keyfile' ? formData.keyFile : '',
+        formData.d8rctlAddress
+      );
+
+      if (result.success) {
+        setToast({ message: '主机添加成功！', type: 'success' });
+        // 重新加载节点列表
+        setTimeout(() => {
+          loadNodes();
+        }, 2000);
+      } else {
+        setToast({ message: `添加主机失败: ${result.message}`, type: 'error' });
+      }
+
+      return result;
+    } catch (error) {
+      const errorMsg = error.message || '添加主机失败';
+      setToast({ message: errorMsg, type: 'error' });
+      throw error;
+    }
+  };
+
   return (
     <div className="dashboard">
       <header className="dashboard-header">
@@ -202,12 +231,20 @@ const Dashboard = ({ onLogout }) => {
         </div>
 
         <div className="nodes-card">
-          <h2>已连接的节点</h2>
+          <div className="nodes-header">
+            <h2>已连接的节点</h2>
+            <button className="btn btn-add-host" onClick={() => setAddHostModalOpen(true)}>
+              + 添加主机
+            </button>
+          </div>
           {nodesLoading ? (
             <div className="loading">加载中...</div>
           ) : Object.keys(nodes).length === 0 ? (
             <div className="empty-state">
               <p>暂无连接的节点</p>
+              <button className="btn btn-primary" onClick={() => setAddHostModalOpen(true)}>
+                添加第一个主机
+              </button>
             </div>
           ) : (
             <div className="nodes-grid">
@@ -299,6 +336,12 @@ const Dashboard = ({ onLogout }) => {
       >
         <p>此操作将{modal.action === 'stop' ? '停止' : '重启'} Domcluster 服务，确定要继续吗？</p>
       </Modal>
+
+      <AddHostModal
+        isOpen={addHostModalOpen}
+        onClose={() => setAddHostModalOpen(false)}
+        onSubmit={handleAddHost}
+      />
 
       {toast && (
         <Toast

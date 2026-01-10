@@ -77,6 +77,7 @@ func NewHTTPServer(status *ServerStatus, svc interface{}) *HTTPServer {
 			authRequired.POST("/restart", hs.handleRestart)
 			authRequired.GET("/nodes", hs.handleNodes)
 			authRequired.GET("/nodes/:nodeId/status", hs.handleNodeStatus)
+			authRequired.POST("/hosts/add", hs.handleAddHost)
 			authRequired.GET("/docker/containers", hs.handleDockerList)
 			authRequired.POST("/docker/start", hs.handleDockerStart)
 			authRequired.POST("/docker/stop", hs.handleDockerStop)
@@ -278,4 +279,32 @@ func GetNodeList() (map[string]interface{}, error) {
 	}
 
 	return nodes, nil
+}
+
+// handleAddHost 处理添加主机请求
+func (hs *HTTPServer) handleAddHost(c *gin.Context) {
+	var req services.HostProvisionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+		return
+	}
+
+	// 创建主机供应器
+	provisioner, err := services.NewHostProvisioner()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to create provisioner: %v", err)})
+		return
+	}
+
+	// 执行供应
+	result, err := provisioner.ProvisionHost(&req)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":  err.Error(),
+			"result": result,
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, result)
 }

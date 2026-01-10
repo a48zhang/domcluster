@@ -34,6 +34,7 @@ func NewCLIServer(svc *services.DomclusterServer) *CLIServer {
 	mux.HandleFunc("/stop", hs.handleStop)
 	mux.HandleFunc("/restart", hs.handleRestart)
 	mux.HandleFunc("/nodes", hs.handleNodes)
+	mux.HandleFunc("/hosts/add", hs.handleAddHost)
 
 	hs.server = &http.Server{
 		Handler:      mux,
@@ -157,4 +158,42 @@ func (cs *CLIServer) handleNodes(w http.ResponseWriter, r *http.Request) {
 // GetCLISocketPath 获取 CLI socket 路径
 func GetCLISocketPath() string {
 	return cliSocketPath
+}
+
+// handleAddHost 处理添加主机请求
+func (cs *CLIServer) handleAddHost(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		json.NewEncoder(w).Encode(map[string]interface{}{"error": "method not allowed"})
+		return
+	}
+
+	var req services.HostProvisionRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{"error": "invalid request"})
+		return
+	}
+
+	// 创建主机供应器
+	provisioner, err := services.NewHostProvisioner()
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]interface{}{"error": fmt.Sprintf("failed to create provisioner: %v", err)})
+		return
+	}
+
+	// 执行供应
+	result, err := provisioner.ProvisionHost(&req)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"error":  err.Error(),
+			"result": result,
+		})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
 }
