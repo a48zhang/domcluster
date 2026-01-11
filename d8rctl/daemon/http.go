@@ -85,6 +85,7 @@ func NewHTTPServer(status *ServerStatus, svc interface{}) *HTTPServer {
 			authRequired.GET("/docker/stats", hs.handleDockerStats)
 			authRequired.GET("/docker/inspect", hs.handleDockerInspect)
 			authRequired.GET("/docker/nodes", hs.handleDockerNodes)
+			authRequired.GET("/terminal/ws", hs.handleTerminalWebSocket)
 		}
 	}
 

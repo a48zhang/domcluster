@@ -119,6 +119,45 @@ func (d *Daemon) Run(ctx context.Context, nodeID, nodeName string) error {
 		zap.L().Sugar().Warn("Docker client not available, Docker handlers registered with error responses")
 	}
 
+	// 注册 Shell 执行处理器
+	d.manager.RegisterHandler("shell_exec", func(resp *pb.PublishResponse) error {
+		var data map[string]interface{}
+		if err := json.Unmarshal(resp.Data, &data); err != nil {
+			return err
+		}
+
+		command, ok := data["command"].(string)
+		if !ok {
+			errorData := map[string]interface{}{
+				"error": "missing command",
+			}
+			dataBytes, _ := json.Marshal(errorData)
+			return d.manager.Send("shell_response", resp.ReqId, dataBytes)
+		}
+
+		// 执行命令
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		cmd := exec.CommandContext(ctx, "sh", "-c", command)
+		output, err := cmd.CombinedOutput()
+
+		result := map[string]interface{}{
+			"output": string(output),
+		}
+
+		if err != nil {
+			result["error"] = err.Error()
+			result["exit_code"] = cmd.ProcessState.ExitCode()
+		} else {
+			result["exit_code"] = 0
+		}
+
+		resultBytes, _ := json.Marshal(result)
+		return d.manager.Send("shell_response", resp.ReqId, resultBytes)
+	})
+	zap.L().Sugar().Info("Shell exec handler registered")
+
 	zap.L().Sugar().Info("Daemon running...")
 
 	// 等待停止信号

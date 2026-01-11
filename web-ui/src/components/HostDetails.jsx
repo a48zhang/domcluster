@@ -163,16 +163,66 @@ const HostDetails = ({ onLogout }) => {
     xtermRef.current = term;
     fitAddonRef.current = fitAddon;
 
-    // Welcome message
-    term.writeln('Web Terminal for ' + (nodeInfo?.name || nodeId));
-    term.writeln('Note: Terminal functionality requires backend WebSocket support');
-    term.writeln('');
-    term.write('$ ');
+    // Connect to WebSocket
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${protocol}//${window.location.host}/api/terminal/ws?node_id=${nodeId}`;
+    
+    const ws = new WebSocket(wsUrl);
+    const wsRef = { current: ws };
+
+    ws.onopen = () => {
+      term.writeln('Connected to ' + (nodeInfo?.name || nodeId));
+      term.writeln('Type commands and press Enter to execute');
+      term.writeln('');
+      term.write('$ ');
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data);
+        if (msg.type === 'output' && msg.data) {
+          term.write(msg.data);
+        }
+      } catch (error) {
+        console.error('Failed to parse WebSocket message:', error);
+      }
+    };
+
+    ws.onerror = (error) => {
+      term.writeln('\r\nWebSocket error occurred');
+      console.error('WebSocket error:', error);
+    };
+
+    ws.onclose = () => {
+      term.writeln('\r\nConnection closed');
+    };
+
+    let currentLine = '';
 
     // Handle terminal input
     term.onData((data) => {
-      term.write(data);
-      // TODO: Send data to backend via WebSocket
+      const code = data.charCodeAt(0);
+
+      if (code === 13) { // Enter key
+        term.write('\r\n');
+        if (currentLine.trim() && ws.readyState === WebSocket.OPEN) {
+          // Send command to backend
+          ws.send(JSON.stringify({
+            type: 'input',
+            data: currentLine.trim()
+          }));
+        }
+        currentLine = '';
+        term.write('$ ');
+      } else if (code === 127) { // Backspace
+        if (currentLine.length > 0) {
+          currentLine = currentLine.slice(0, -1);
+          term.write('\b \b');
+        }
+      } else if (code >= 32) { // Printable characters
+        currentLine += data;
+        term.write(data);
+      }
     });
 
     // Resize on window resize
@@ -185,6 +235,9 @@ const HostDetails = ({ onLogout }) => {
 
     return () => {
       window.removeEventListener('resize', handleResize);
+      if (wsRef.current) {
+        wsRef.current.close();
+      }
       term.dispose();
     };
   };

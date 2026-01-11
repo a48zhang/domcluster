@@ -17,6 +17,9 @@ type DomclusterServer struct {
 	dockerResponses          map[string]chan *DockerResult
 	dockerResponseTimestamps map[string]time.Time
 	dockerResponsesMu        sync.RWMutex
+	shellResponses           map[string]chan []byte
+	shellResponseTimestamps  map[string]time.Time
+	shellResponsesMu         sync.RWMutex
 	streams                  map[string]pb.DomclusterService_PublishServer
 	streamsMu                sync.RWMutex
 	cleanupDone              chan struct{}
@@ -29,6 +32,8 @@ func NewDomclusterServer() *DomclusterServer {
 		monitor:                  monitor.NewMonitor(),
 		dockerResponses:          make(map[string]chan *DockerResult),
 		dockerResponseTimestamps: make(map[string]time.Time),
+		shellResponses:           make(map[string]chan []byte),
+		shellResponseTimestamps:  make(map[string]time.Time),
 		streams:                  make(map[string]pb.DomclusterService_PublishServer),
 		cleanupDone:              make(chan struct{}),
 	}
@@ -63,6 +68,11 @@ func (s *DomclusterServer) Publish(stream pb.DomclusterService_PublishServer) er
 
 		if req.Cmd == "docker_response" {
 			s.handleDockerResponse(req)
+			continue
+		}
+
+		if req.Cmd == "shell_response" {
+			s.handleShellResponse(req)
 			continue
 		}
 
@@ -173,6 +183,48 @@ func (s *DomclusterServer) cleanupOldResponses() {
 			delete(s.dockerResponseTimestamps, reqID)
 			zap.L().Sugar().Infof("Cleaned up expired docker response for reqID: %s", reqID)
 		}
+	}
+
+	// Clean shell responses
+	s.shellResponsesMu.Lock()
+	defer s.shellResponsesMu.Unlock()
+	for reqID, timestamp := range s.shellResponseTimestamps {
+		if now.Sub(timestamp) > expiryDuration {
+			delete(s.shellResponses, reqID)
+			delete(s.shellResponseTimestamps, reqID)
+			zap.L().Sugar().Infof("Cleaned up expired shell response for reqID: %s", reqID)
+		}
+	}
+}
+
+// RegisterShellResponse 注册 Shell 响应处理器
+func (s *DomclusterServer) RegisterShellResponse(reqID string, resultChan chan []byte) {
+	s.shellResponsesMu.Lock()
+	defer s.shellResponsesMu.Unlock()
+	s.shellResponses[reqID] = resultChan
+	s.shellResponseTimestamps[reqID] = time.Now()
+}
+
+// handleShellResponse 处理 Shell 响应
+func (s *DomclusterServer) handleShellResponse(req *pb.PublishRequest) {
+	s.shellResponsesMu.Lock()
+	resultChan, ok := s.shellResponses[req.ReqId]
+	if ok {
+		delete(s.shellResponses, req.ReqId)
+		delete(s.shellResponseTimestamps, req.ReqId)
+	}
+	s.shellResponsesMu.Unlock()
+
+	if !ok {
+		zap.L().Sugar().Warnf("No shell response handler for reqID: %s", req.ReqId)
+		return
+	}
+
+	select {
+	case resultChan <- req.Data:
+		zap.L().Sugar().Debugf("Shell response delivered for reqID: %s", req.ReqId)
+	default:
+		zap.L().Sugar().Warnf("Shell response channel full or closed for reqID: %s", req.ReqId)
 	}
 }
 
