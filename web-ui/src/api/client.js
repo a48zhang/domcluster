@@ -101,6 +101,18 @@ class ApiClient {
         return this.post('/api/logout');
     }
 
+    // ===== Host Management API =====
+
+    // 添加主机
+    async addHost(sshConnectionString, password, keyFile, d8rctlAddress) {
+        return this.post('/api/hosts/add', {
+            ssh_connection_string: sshConnectionString,
+            password: password || '',
+            key_file: keyFile || '',
+            d8rctl_address: d8rctlAddress || 'localhost:50051',
+        });
+    }
+
     // ===== Docker 相关 API =====
 
     // 获取所有可用节点（用于Docker管理）
