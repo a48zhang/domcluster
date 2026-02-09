@@ -9,4 +9,4 @@ all: clean
 	cp docker-entry.sh $(ROOT_DIR)/built/docker-entry.sh
 
 clean:
-	rm -r $(ROOT_DIR)/built
+	-rm -rf $(ROOT_DIR)/built
