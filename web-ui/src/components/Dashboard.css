@@ -160,6 +160,7 @@
   padding: 20px;
   border: 1px solid #e9ecef;
   transition: all 0.3s;
+  cursor: pointer;
 }
 
 .node-card:hover {
